@@ -1,0 +1,27 @@
+[project]
+name = "taiwanfrp-backend"
+app_name = "TaiwanFRP"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "asyncmy>=0.2.11",
+    "asyncpg>=0.31.0",
+    "fastapi>=0.136.3",
+    "pydantic-settings>=2.14.1",
+    "sqlalchemy>=2.0.50",
+    "uvicorn>=0.48.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.3.0",
+    "mypy>=2.1.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.15",
+]
+[tool.pytest.ini_options]
+pythonpath = [
+    "."
+]
