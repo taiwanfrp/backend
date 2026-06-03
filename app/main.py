@@ -14,6 +14,9 @@ app = FastAPI(
     description=pyproject_data.get("description", "")
 )
 
+from app.middlewares.request_timer import RequestTimerMiddleware
+app.add_middleware(RequestTimerMiddleware)
+
 @app.get("/")
 async def read_root() -> dict[str, str]:
     return {"message": "Hello, World!"}
