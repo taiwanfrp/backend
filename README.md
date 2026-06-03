@@ -6,6 +6,37 @@ Development is done in the `main` branch. The `release` branch is the latest sta
 
 ---
 
+## 安裝依賴
+
+本專案使用 `uv` 進行套件管理：
+```bash
+uv sync
+```
+
+---
+
+## 資料庫初始化 (Alembic Migrations)
+
+第一次啟動專案前，必須建立資料庫結構：
+
+```bash
+# 執行升級，將 models 同步到資料庫中
+uv run alembic upgrade head
+```
+(備註：開發過程中若有修改 models.py，請執行 uv run alembic revision --autogenerate -m "描述" 來產生新的遷移檔，再執行 upgrade head)
+
+---
+
+## 啟動伺服器
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+伺服器將運行於 http://127.0.0.1:8000
+可前往 http://127.0.0.1:8000/docs 查看 API Swagger
+
+---
+
 ## API Overview
 
 | Method | Endpoint | Description |
