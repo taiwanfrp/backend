@@ -23,7 +23,7 @@ uv sync
 # 執行升級，將 models 同步到資料庫中
 uv run alembic upgrade head
 ```
-(備註：開發過程中若有修改 models.py，請執行 uv run alembic revision --autogenerate -m "描述" 來產生新的遷移檔，再執行 upgrade head)
+(備註：開發過程中若有修改 `models.py`，請執行 `uv run alembic revision --autogenerate -m "描述"` 來產生新的遷移檔，再執行 `upgrade head`)
 
 ---
 
