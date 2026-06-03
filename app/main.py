@@ -21,3 +21,7 @@ async def read_root() -> dict[str, str]:
 @app.get("/items/{item_id}")
 async def read_item(item_id: int) -> dict[str, str | int]:
     return {"item_id": item_id, "description": f"This is item {item_id}"}
+
+from app.routers import auth, users
+app.include_router(auth.router)
+app.include_router(users.router)
