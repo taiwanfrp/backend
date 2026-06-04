@@ -24,7 +24,6 @@ async def discord_login(response: Response):
     生成 Discord OAuth2 登入 URL 並重定向用戶, 同時產生並存儲 CSRF state 防止 CSRF 攻擊
     """
     state = secrets.token_urlsafe(16)  # 生成隨機 state 參數
-    response.set_cookie(key="oauth_state", value=state, httponly=True, max_age=300, samesite="lax")  # 將 state 存入 cookie, 有效期5分鐘
     
     params = {
         "client_id": settings.discord_client_id,
@@ -37,7 +36,10 @@ async def discord_login(response: Response):
     from urllib.parse import urlencode
     auth_url = f"{DISCORD_AUTH_URL}?{urlencode(params)}"
     
-    return RedirectResponse(url=auth_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    redirect_response = RedirectResponse(url=auth_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    redirect_response.set_cookie(key="oauth_state", value=state, httponly=True, max_age=300, samesite="lax")  # 將 state 存入 cookie, 有效期5分鐘
+    
+    return redirect_response
 
 @router.get("/discord/callback")
 async def discord_callback(request: Request, code: str, state: str, db: AsyncSession = Depends(get_db), redis: Redis = Depends(get_redis)):
