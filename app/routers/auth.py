@@ -106,9 +106,14 @@ async def discord_callback(request: Request, code: str, state: str, db: AsyncSes
     # 要把整個 user_info 存進去, 以便後續取得 email 等資料
     session_data = {
         "internal_user_id": user.id,
-        "discord_id": user_info["id"],
+        "internal_account_status": user.status.value,
+        "discord_id": user.discord_id,
         "username": user_info["username"],
-        "avatar": user_info.get("avatar")
+        "avatar": user_info["avatar"],
+        "mfa_enabled": user_info["mfa_enabled"],
+        "locale": user_info["locale"],
+        "email": user_info["email"],
+        "verified": user_info["verified"],
     }
     await redis.set(f"auth:session:{session_token}", json.dumps(session_data), ex=604800)  # 存儲7天, 使用 session_token 作為 key
     

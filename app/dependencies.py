@@ -8,9 +8,14 @@ from pydantic import BaseModel
 
 class CurrentUser(BaseModel):
     internal_user_id: str
+    internal_account_status: str
     discord_id: str
     username: str
-    avatar: str | None = None
+    avatar: str
+    mfa_enabled: bool
+    locale: str
+    email: str
+    verified: bool
 
 async def get_current_user(request: Request, redis: Redis = Depends(get_redis)) -> CurrentUser:
     """
