@@ -37,7 +37,16 @@ async def discord_login(response: Response):
     auth_url = f"{DISCORD_AUTH_URL}?{urlencode(params)}"
     
     redirect_response = RedirectResponse(url=auth_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-    redirect_response.set_cookie(key="oauth_state", value=state, httponly=True, max_age=300, samesite="lax")  # 將 state 存入 cookie, 有效期5分鐘
+    redirect_response.set_cookie(
+        key=settings.cookie_auth_login_state_name,
+        value=state,
+        max_age=settings.cookie_auth_login_state_max_age,
+        path=settings.cookie_path,
+        domain=settings.cookie_domain,
+        secure=settings.cookie_secure,
+        httponly=settings.cookie_httponly,
+        samesite=settings.cookie_samesite
+    )
     
     return redirect_response
 
@@ -47,7 +56,7 @@ async def discord_callback(request: Request, code: str, state: str, db: AsyncSes
     處理 Discord OAuth2 回調, 驗證 state 並交換 access token
     """
     # 驗證 CSRF state
-    stored_state = request.cookies.get("oauth_state")
+    stored_state = request.cookies.get(settings.cookie_auth_login_state_name)
     if not stored_state or stored_state != state:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state")
     if not code:
@@ -99,8 +108,17 @@ async def discord_callback(request: Request, code: str, state: str, db: AsyncSes
     session_token = secrets.token_urlsafe(32)  # 生成 session token
     
     response = RedirectResponse(url="/", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-    response.set_cookie(key="session_token", value=session_token, httponly=True, max_age=604800, samesite="lax")  # 將 session token 存入 cookie, 有效期7天
-    response.delete_cookie(key="oauth_state")  # 刪除 state cookie
+    response.set_cookie(
+        key=settings.cookie_auth_name,
+        value=session_token,
+        max_age=settings.cookie_auth_max_age,
+        path=settings.cookie_path,
+        domain=settings.cookie_domain,
+        secure=settings.cookie_secure,
+        httponly=settings.cookie_httponly,
+        samesite=settings.cookie_samesite
+    )
+    response.delete_cookie(key=settings.cookie_auth_login_state_name)  # 刪除 state cookie
     
     # 在 Redis 中存儲驗證碼或用戶信息, 以便後續驗證使用
     # 要把整個 user_info 存進去, 以便後續取得 email 等資料
@@ -115,7 +133,7 @@ async def discord_callback(request: Request, code: str, state: str, db: AsyncSes
         "email": user_info["email"],
         "verified": user_info["verified"],
     }
-    await redis.set(f"auth:session:{session_token}", json.dumps(session_data), ex=604800)  # 存儲7天, 使用 session_token 作為 key
+    await redis.set(f"auth:session:{session_token}", json.dumps(session_data), ex=settings.cookie_auth_max_age)
     
     return response
 
@@ -124,9 +142,9 @@ async def logout(request: Request, response: Response, redis: Redis = Depends(ge
     """
     處理用戶登出, 刪除 session cookie 和 Redis 中的 session
     """
-    session_token = request.cookies.get("session_token")
+    session_token = request.cookies.get(settings.cookie_auth_name)
     if session_token:
         await redis.delete(f"auth:session:{session_token}")
     
-    response.delete_cookie(key="session_token")  # 刪除 session
+    response.delete_cookie(key=settings.cookie_auth_name)  # 刪除 session
     return
