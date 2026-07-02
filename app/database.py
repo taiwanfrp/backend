@@ -1,17 +1,23 @@
 from collections.abc import AsyncGenerator
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 from app.config import settings
 
+database_url = make_url(settings.db_url)
+
 if settings.db_type == "mysql":
-    DATABASE_URL = f"mysql+asyncmy://{settings.db_user}:{settings.db_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+    DATABASE_URL = database_url.set(drivername="mysql+asyncmy")
+    CONNECT_ARGS = {"ssl": True} if settings.db_mysql_ssl else {}
 elif settings.db_type == "postgresql":
-    DATABASE_URL = f"postgresql+asyncpg://{settings.db_user}:{settings.db_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+    DATABASE_URL = database_url.set(drivername="postgresql+asyncpg")
+    CONNECT_ARGS = {}
 else:
     raise ValueError(f"Unsupported database type: {settings.db_type}")
 
 engine = create_async_engine(
     DATABASE_URL,
+    connect_args=CONNECT_ARGS,
     echo=False,  # Set to True for SQL query logging
     pool_size=10,
     max_overflow=20,

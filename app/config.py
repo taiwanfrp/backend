@@ -1,18 +1,12 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    db_url: str = ""
+    db_mysql_ssl: bool = False
+    redis_url: str = ""
+
     db_type: str = "mysql"
-    db_host: str = "localhost"
-    db_port: int = 3306
-    db_user: str = "root"
-    db_password: str = "password"
-    db_name: str = "mydatabase"
-    
-    redis_host: str = "localhost"
-    redis_port: int = 6379
-    redis_user: str = ""
-    redis_password: str = ""
-    redis_db: int = 0
     
     cookie_auth_name: str = "auth"
     cookie_auth_max_age: int = 604800  # 7天
@@ -31,6 +25,20 @@ class Settings(BaseSettings):
     discord_client_secret: str = ""
     discord_redirect_uri: str = ""
     discord_oauth2_scope: str = "identify+email+guilds"
+
+    @model_validator(mode="after")
+    def set_db_type(self):
+        if not self.db_url:
+            raise ValueError("DB_URL is required")
+
+        if self.db_url.startswith("mysql://") or self.db_url.startswith("mysql+"):
+            self.db_type = "mysql"
+        elif self.db_url.startswith("postgresql://") or self.db_url.startswith("postgresql+"):
+            self.db_type = "postgresql"
+        else:
+            raise ValueError("DB_URL must use mysql or postgresql")
+
+        return self
     
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True)
 

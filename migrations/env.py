@@ -3,6 +3,8 @@ from logging.config import fileConfig
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
@@ -20,16 +22,28 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 from app.config import settings
-# 根據 settings.py 的設定組合連線字串
+
+database_url = make_url(settings.db_url)
+
 if settings.db_type == "mysql":
-    db_url = f"mysql+asyncmy://{settings.db_user}:{settings.db_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+    db_url = database_url.set(drivername="mysql+asyncmy")
+    connect_args = {"ssl": True} if settings.db_mysql_ssl else {}
 elif settings.db_type == "postgresql":
-    db_url = f"postgresql+asyncpg://{settings.db_user}:{settings.db_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+    filtered_query = {
+        key: value
+        for key, value in database_url.query.items()
+        if key not in {"sslmode", "channel_binding"}
+    }
+    db_url = database_url.set(
+        drivername="postgresql+asyncpg",
+        query=filtered_query,
+    )
+    connect_args = {}
 else:
-    db_url = ""
+    raise ValueError(f"Unsupported database type: {settings.db_type}")
 
 # 強制覆寫 alembic.ini 裡面的 sqlalchemy.url
-config.set_main_option("sqlalchemy.url", db_url)
+config.set_main_option("sqlalchemy.url", db_url.render_as_string(hide_password=False))
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -82,10 +96,10 @@ async def run_async_migrations() -> None:
 
     """
 
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+    connectable = create_async_engine(
+        db_url,
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:
