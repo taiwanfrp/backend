@@ -36,7 +36,7 @@ async def discord_login(response: Response):
     from urllib.parse import urlencode
     auth_url = f"{DISCORD_AUTH_URL}?{urlencode(params)}"
     
-    redirect_response = RedirectResponse(url=auth_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    redirect_response = RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
     redirect_response.set_cookie(
         key=settings.cookie_auth_login_state_name,
         value=state,
