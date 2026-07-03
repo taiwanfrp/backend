@@ -25,6 +25,9 @@ async def read_root() -> dict[str, str]:
 async def read_item(item_id: int) -> dict[str, str | int]:
     return {"item_id": item_id, "description": f"This is item {item_id}"}
 
+from app.exception_handlers import AuthException, auth_exception_handler
+app.add_exception_handler(AuthException, auth_exception_handler)
+
 from app.routers import auth, users, system
 app.include_router(auth.router)
 app.include_router(users.router)

@@ -7,6 +7,8 @@ from app.config import settings
 # 定義一個 Pydantic 模型，用來提供 IDE 強型別支援
 from pydantic import BaseModel
 
+from app.exception_handlers import AuthException
+
 class CurrentUser(BaseModel):
     internal_user_id: str
     internal_account_status: str
@@ -28,7 +30,7 @@ async def get_current_user(request: Request, redis: Redis = Depends(get_redis)) 
     
     user_data_json = await redis.get(f"auth:session:{session_token}")
     if not user_data_json:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired or invalid")
+        raise AuthException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired or invalid")  # 刪除無效 session cookie
     
     try:
         user_data = json.loads(user_data_json)
