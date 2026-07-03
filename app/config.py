@@ -1,9 +1,9 @@
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    db_url: str = ""
-    db_mysql_ssl: bool = False
+    db_url: str = Field(default="", validation_alias="DATABASE_URL")
+    db_mysql_ssl: bool = Field(default=False, validation_alias="DATABASE_MYSQL_SSL")
     redis_url: str = ""
 
     db_type: str = "mysql"
@@ -29,14 +29,14 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def set_db_type(self):
         if not self.db_url:
-            raise ValueError("DB_URL is required")
+            raise ValueError("DATABASE_URL is required")
 
         if self.db_url.startswith("mysql://") or self.db_url.startswith("mysql+"):
             self.db_type = "mysql"
         elif self.db_url.startswith("postgresql://") or self.db_url.startswith("postgresql+"):
             self.db_type = "postgresql"
         else:
-            raise ValueError("DB_URL must use mysql or postgresql")
+            raise ValueError("DATABASE_URL must use mysql or postgresql")
 
         return self
     
