@@ -10,8 +10,18 @@ if settings.db_type == "mysql":
     DATABASE_URL = database_url.set(drivername="mysql+asyncmy")
     CONNECT_ARGS = {"ssl": True} if settings.db_mysql_ssl else {}
 elif settings.db_type == "postgresql":
-    DATABASE_URL = database_url.set(drivername="postgresql+asyncpg")
-    CONNECT_ARGS = {}
+    sslmode = database_url.query.get("sslmode")
+    filtered_query = {
+        key: value
+        for key, value in database_url.query.items()
+        if key not in {"sslmode", "channel_binding"}
+    }
+
+    DATABASE_URL = database_url.set(
+        drivername="postgresql+asyncpg",
+        query=filtered_query,
+    )
+    CONNECT_ARGS = {"ssl": True} if sslmode in {"require", "verify-ca", "verify-full"} else {}
 else:
     raise ValueError(f"Unsupported database type: {settings.db_type}")
 
