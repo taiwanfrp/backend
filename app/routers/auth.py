@@ -118,7 +118,11 @@ async def discord_callback(request: Request, code: str, state: str, db: AsyncSes
         httponly=settings.cookie_httponly,
         samesite=settings.cookie_samesite
     )
-    response.delete_cookie(key=settings.cookie_auth_login_state_name)  # 刪除 state cookie
+    response.delete_cookie(
+        key=settings.cookie_auth_login_state_name,
+        path=settings.cookie_path,
+        domain=settings.cookie_domain,
+    )  # 刪除 state cookie
     
     # 在 Redis 中存儲驗證碼或用戶信息, 以便後續驗證使用
     # 要把整個 user_info 存進去, 以便後續取得 email 等資料
@@ -146,5 +150,9 @@ async def logout(request: Request, response: Response, redis: Redis = Depends(ge
     if session_token:
         await redis.delete(f"auth:session:{session_token}")
     
-    response.delete_cookie(key=settings.cookie_auth_name)  # 刪除 session
+    response.delete_cookie(
+        key=settings.cookie_auth_name,
+        path=settings.cookie_path,
+        domain=settings.cookie_domain,
+    )  # 刪除 session
     return
