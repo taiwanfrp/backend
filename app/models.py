@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import uuid6
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Boolean, DateTime, Enum, ForeignKey
+from sqlalchemy import String, Boolean, DateTime, Enum, ForeignKey, Column, Table, Integer
 from app.database import Base
 
 def generate_uuidv7() -> str:
@@ -31,10 +31,13 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuidv7)
     discord_id: Mapped[str] = mapped_column(String(20), unique=True, index=True, nullable=False)    # Discord ID 現在已經 19 位了, 預留到 20 位
     status: Mapped[AccountStatus] = mapped_column(Enum(AccountStatus), nullable=False, default=AccountStatus.SUSPENDED)
+    custom_max_tunnels: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)  # 自訂最大隧道數量, None 表示使用角色的限制
+    custom_max_bandwidth: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)  # 自訂最大頻寬限制, None 表示使用角色的限制
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now, onupdate=get_utc_now)
 
     auth_methods: Mapped[list["UserAuthMethod"]] = relationship("UserAuthMethod", back_populates="user", cascade="all, delete-orphan")
+    roles: Mapped[list["Role"]] = relationship("Role", secondary="user_roles", back_populates="users")
 
 class UserAuthMethod(Base):
     __tablename__ = "user_auth_methods"
@@ -48,3 +51,46 @@ class UserAuthMethod(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now, onupdate=get_utc_now)
     
     user: Mapped[User] = relationship("User", back_populates="auth_methods")
+
+# permission
+
+# role 與 permission 多對多中介表
+role_permission = Table(
+    "role_permission",
+    Base.metadata,
+    Column("role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
+    Column("permission_id", Integer, ForeignKey("permissions.id", ondelete="CASCADE"), primary_key=True)
+)
+
+# user 與 role 多對多中介表
+user_roles = Table(
+    "user_roles",
+    Base.metadata,
+    Column("user_id", String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
+)
+
+class Permission(Base):
+    __tablename__ = "permissions"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)  # e.g., "tunnel.create"
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now, onupdate=get_utc_now)
+    
+    roles: Mapped[list["Role"]] = relationship("Role", secondary=role_permission, back_populates="permissions")
+
+class Role(Base):
+    __tablename__ = "roles"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)  # e.g., "admin"
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    max_tunnels: Mapped[int] = mapped_column(Integer, nullable=False, default=3)  # 0 表示無限制
+    max_bandwidth: Mapped[int] = mapped_column(Integer, nullable=False, default=3)  # 0 表示無限制
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now, onupdate=get_utc_now)
+    
+    permissions: Mapped[list[Permission]] = relationship("Permission", secondary=role_permission, back_populates="roles")
+    users: Mapped[list["User"]] = relationship("User", secondary=user_roles, back_populates="roles")
