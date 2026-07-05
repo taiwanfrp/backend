@@ -2,12 +2,13 @@ import httpx2, json, secrets
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 from redis.asyncio import Redis
 from app.redis_client import get_redis
 
 from app.database import get_db
-from app.models import User
+from app.models import User, Role
 from app.config import settings
 
 # v1 版本的驗證路由, 包含 Discord OAuth2 登入流程和相關的 Redis 驗證碼管理
@@ -95,15 +96,26 @@ async def discord_callback(request: Request, code: str, state: str, db: AsyncSes
     # username = user_info["username"]
     
     # 根據 discord_id 查詢或創建用戶, 並生成 session 存入 Redis
-    query = select(User).where(User.discord_id == discord_id)
+    query = select(User).where(User.discord_id == discord_id).options(selectinload(User.roles).selectinload(Role.permissions))
     result = await db.execute(query)
     user = result.scalar_one_or_none()
     
     if not user:
         user = User(discord_id=discord_id)
+        role_query = select(Role).where(Role.name == "user").options(selectinload(Role.permissions))
+        default_role = (await db.execute(role_query)).scalar_one_or_none()
+        if default_role:
+            user.roles.append(default_role)
         db.add(user)
         await db.commit()
         await db.refresh(user)
+        
+        if default_role:
+            user_permissions = list({permission.name for permission in default_role.permissions})
+        else:
+            user_permissions = []
+    else:
+        user_permissions = list({permission.name for role in user.roles for permission in role.permissions})
     
     session_token = secrets.token_urlsafe(32)  # 生成 session token
     
@@ -130,14 +142,15 @@ async def discord_callback(request: Request, code: str, state: str, db: AsyncSes
         "internal_user_id": user.id,
         "internal_account_status": user.status.value,
         "discord_id": user.discord_id,
-        "username": user_info["username"],
-        "avatar": user_info["avatar"],
-        "mfa_enabled": user_info["mfa_enabled"],
-        "locale": user_info["locale"],
-        "email": user_info["email"],
-        "verified": user_info["verified"],
+        "username": user_info.get("username", "Unknown"),
+        "avatar": user_info.get("avatar"),
+        "mfa_enabled": user_info.get("mfa_enabled", False),
+        "locale": user_info.get("locale", "en-US"),
+        "email": user_info.get("email"),
+        "verified": user_info.get("verified", False),
     }
     await redis.set(f"auth:session:{session_token}", json.dumps(session_data), ex=settings.cookie_auth_max_age)
+    await redis.set(f"auth:permissions:{user.id}", json.dumps(user_permissions), ex=settings.cookie_auth_max_age)
     
     return response
 
