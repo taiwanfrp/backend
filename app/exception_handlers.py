@@ -1,4 +1,4 @@
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from app.config import settings
 
@@ -8,7 +8,7 @@ class AuthException(HTTPException):
     """
     pass
 
-async def auth_exception_handler(request, exc: AuthException):
+async def auth_exception_handler(request: Request, exc: AuthException) -> JSONResponse:
     """
     處理 Auth 接口的 Error Handler, 當傳入的 session cookie 無效則刪除 auth cookie
     """

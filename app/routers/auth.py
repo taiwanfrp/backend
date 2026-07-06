@@ -1,4 +1,6 @@
-import httpx2, json, secrets
+import httpx2
+import json
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,7 +48,7 @@ async def discord_login(response: Response):
         domain=settings.cookie_domain,
         secure=settings.cookie_secure,
         httponly=settings.cookie_httponly,
-        samesite=settings.cookie_samesite
+        samesite=settings.cookie_samesite   # type: ignore[arg-type]
     )
     
     return redirect_response
@@ -128,7 +130,7 @@ async def discord_callback(request: Request, code: str, state: str, db: AsyncSes
         domain=settings.cookie_domain,
         secure=settings.cookie_secure,
         httponly=settings.cookie_httponly,
-        samesite=settings.cookie_samesite
+        samesite=settings.cookie_samesite   # type: ignore[arg-type]
     )
     response.delete_cookie(
         key=settings.cookie_auth_login_state_name,

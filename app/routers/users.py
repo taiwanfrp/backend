@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends
 from app.dependencies import get_current_user, CurrentUser
 
 router = APIRouter(prefix="/api/v1/users", tags=["Users"])

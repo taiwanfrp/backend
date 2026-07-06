@@ -5,11 +5,11 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-import os, sys
+import os
+import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 # this is the Alembic Config object, which provides
@@ -21,7 +21,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-from app.config import settings
+from app.config import settings # noqa: E402
 
 database_url = make_url(settings.db_url)
 
@@ -49,8 +49,7 @@ config.set_main_option("sqlalchemy.url", db_url.render_as_string(hide_password=F
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-from app.database import Base
-import app.models  # 確保模型被導入, 以便 Alembic 能夠找到 metadata
+from app.database import Base   # noqa: E402
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

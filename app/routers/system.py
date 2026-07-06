@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends
 from redis.asyncio import Redis
-import asyncmy
-import asyncpg
+import asyncmy  # type: ignore
+import asyncpg  # type: ignore
 
 from sqlalchemy.engine import make_url
 
