@@ -25,6 +25,13 @@ class AuthMethodType(str, enum.Enum):
     EMAIL = "email"
     U2F = "u2f"
 
+class NodeStatus(str, enum.Enum):
+    ACTIVE = "active"           # 可用
+    DRAFT = "draft"             # 待審核(草稿)
+    REVIEWING = "reviewing"     # 審核中
+    MAINTENANCE = "maintenance" # 維護中
+    DISABLED = "disabled"        # 停用
+
 class User(Base):
     __tablename__ = "users"
     
@@ -38,6 +45,7 @@ class User(Base):
 
     auth_methods: Mapped[list["UserAuthMethod"]] = relationship("UserAuthMethod", back_populates="user", cascade="all, delete-orphan")
     roles: Mapped[list["Role"]] = relationship("Role", secondary="user_roles", back_populates="users")
+    nodes: Mapped[list["Node"]] = relationship("Node", back_populates="owner", cascade="all, delete-orphan")
 
 class UserAuthMethod(Base):
     __tablename__ = "user_auth_methods"
@@ -94,3 +102,19 @@ class Role(Base):
     
     permissions: Mapped[list[Permission]] = relationship("Permission", secondary=role_permission, back_populates="roles")
     users: Mapped[list["User"]] = relationship("User", secondary=user_roles, back_populates="roles")
+
+class Node(Base):
+    __tablename__ = "nodes"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    host: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    port_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    port_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[NodeStatus] = mapped_column(Enum(NodeStatus), nullable=False, default=NodeStatus.DRAFT)
+    owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now, onupdate=get_utc_now)
+    
+    owner: Mapped[User] = relationship("User", back_populates="nodes")
