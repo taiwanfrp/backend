@@ -46,6 +46,7 @@ class User(Base):
     auth_methods: Mapped[list["UserAuthMethod"]] = relationship("UserAuthMethod", back_populates="user", cascade="all, delete-orphan")
     roles: Mapped[list["Role"]] = relationship("Role", secondary="user_roles", back_populates="users")
     nodes: Mapped[list["Node"]] = relationship("Node", back_populates="owner", cascade="all, delete-orphan")
+    allowed_nodes: Mapped[list["Node"]] = relationship("Node", secondary="node_guests", back_populates="allowed_users")
 
 class UserAuthMethod(Base):
     __tablename__ = "user_auth_methods"
@@ -103,6 +104,18 @@ class Role(Base):
     permissions: Mapped[list[Permission]] = relationship("Permission", secondary=role_permission, back_populates="roles")
     users: Mapped[list["User"]] = relationship("User", secondary=user_roles, back_populates="roles")
 
+# node
+
+# 私有節點的受邀使用者多對多中介表
+node_guests = Table(
+    "node_guests",
+    Base.metadata,
+    Column("node_id", Integer, ForeignKey("nodes.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, default=get_utc_now),
+    Column("updated_at", DateTime(timezone=True), nullable=False, default=get_utc_now, onupdate=get_utc_now)
+)
+
 class Node(Base):
     __tablename__ = "nodes"
     
@@ -119,3 +132,4 @@ class Node(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now, onupdate=get_utc_now)
     
     owner: Mapped[User] = relationship("User", back_populates="nodes")
+    allowed_users: Mapped[list[User]] = relationship("User", secondary=node_guests, back_populates="allowed_nodes")
