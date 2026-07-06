@@ -113,6 +113,7 @@ class Node(Base):
     port_start: Mapped[int] = mapped_column(Integer, nullable=False)
     port_end: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[NodeStatus] = mapped_column(Enum(NodeStatus), nullable=False, default=NodeStatus.DRAFT)
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now, onupdate=get_utc_now)
