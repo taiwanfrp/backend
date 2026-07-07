@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, or_, and_
@@ -73,6 +73,40 @@ async def get_nodes(owner: Optional[str] = None, current_user: CurrentUser | Non
     stmt = stmt.order_by(Node.created_at.asc())
     result = await db.execute(stmt)
     return result.scalars().all()
+
+@router.get("/{node_id}", response_model=NodeResponse)
+async def get_node(node_id: int = Path(..., description="Node ID", ge=1, le=2147483647), current_user: CurrentUser | None = Depends(get_optional_current_user), db: AsyncSession = Depends(get_db)):
+    """
+    獲取單個節點的路由, 根據使用者權限返回對應可見的節點資訊
+    - 未登入、一般使用者: 僅能看到 ACTIVE 且 is_public=True 的節點
+    - 節點擁有者: 能看到自己擁有的所有節點
+    - 管理員: 能看到所有節點
+    若無權查看則返回 404 Not Found
+    """
+    stmt = select(Node).where(Node.id == node_id)
+    is_admin = current_user and "node.read.all" in current_user.permissions
+    
+    if not is_admin:
+        visible_statuses = [NodeStatus.ACTIVE, NodeStatus.MAINTENANCE, NodeStatus.DISABLED]
+        public_condition = and_(Node.status.in_(visible_statuses), Node.is_public.is_(True))
+        
+        if current_user:
+            stmt = stmt.where(
+                or_(
+                    public_condition,
+                    Node.owner_id == current_user.internal_user_id,
+                    Node.allowed_users.any(User.id == current_user.internal_user_id)
+                )
+            )
+        else:
+            stmt = stmt.where(public_condition)
+    
+    result = await db.execute(stmt)
+    node = result.scalar_one_or_none()
+    if not node:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
+    
+    return node
 
 @router.post("", response_model=NodeResponse, status_code=status.HTTP_201_CREATED)
 async def create_node(request: NodeCreateRequest, current_user: CurrentUser = Depends(RequirePermissions(["node.create"])), db: AsyncSession = Depends(get_db)):
