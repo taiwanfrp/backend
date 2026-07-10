@@ -20,6 +20,15 @@ class NodeCreateRequest(BaseModel):
     port_end: int = Field(..., ge=1, le=65535)
     is_public: bool = True
 
+class NodeUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=50)
+    description: Optional[str] = Field(None, max_length=255)
+    host: Optional[str] = Field(None, max_length=100)
+    port_start: Optional[int] = Field(None, ge=1, le=65535)
+    port_end: Optional[int] = Field(None, ge=1, le=65535)
+    status: Optional[NodeStatus]
+    is_public: Optional[bool]
+
 class NodeResponse(BaseModel):
     id: int
     name: str
@@ -136,3 +145,60 @@ async def create_node(request: NodeCreateRequest, current_user: CurrentUser = De
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Node with the same name or host already exists")
 
     return new_node
+
+@router.patch("/{node_id}", response_model=NodeResponse)
+async def update_node(request: NodeUpdateRequest, node_id: int = Path(..., description="Node ID", ge=1, le=2147483647), current_user: CurrentUser = Depends(RequirePermissions(["node.update.own"])), db: AsyncSession = Depends(get_db)):
+    """
+    更新節點資訊的路由, 只有節點擁有者或管理員可以更新節點資訊
+    """
+    stmt = select(Node).where(Node.id == node_id)
+    result = await db.execute(stmt)
+    node = result.scalar_one_or_none()
+    
+    if not node:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
+    
+    is_admin = "node.update.all" in current_user.permissions
+    if not is_admin and node.owner_id != current_user.internal_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this node")
+    
+    update_data = request.model_dump(exclude_unset=True)
+    if not update_data:
+        return node  # No changes to apply
+    
+    new_port_start = update_data.get("port_start", node.port_start)
+    new_port_end = update_data.get("port_end", node.port_end)
+    if new_port_start > new_port_end:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="port_start must be less than or equal to port_end")
+    
+    if not is_admin:
+        current_status = node.status
+        target_status = update_data.get("status")
+        
+        has_critical_change = (
+            ("host" in update_data and update_data["host"] != node.host) or
+            ("port_start" in update_data and update_data["port_start"] != node.port_start) or
+            ("port_end" in update_data and update_data["port_end"] != node.port_end)
+        )
+        
+        if has_critical_change:
+            update_data["status"] = NodeStatus.DRAFT
+            target_status = NodeStatus.DRAFT
+        
+        if target_status and target_status != current_status:
+            if current_status in [NodeStatus.DRAFT, NodeStatus.REVIEWING]:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot manually change status while node is in {current_status.value} state")
+            elif current_status in [NodeStatus.ACTIVE, NodeStatus.MAINTENANCE, NodeStatus.DISABLED]:
+                pass
+    
+    for key, value in update_data.items():
+        setattr(node, key, value)
+    
+    try:
+        await db.commit()
+        await db.refresh(node)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Node with the same name or host already exists")
+
+    return node
