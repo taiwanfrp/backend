@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, or_, and_
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -61,8 +61,7 @@ class NodeResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 @router.get("", response_model=list[NodeResponse])
 async def get_nodes(owner: Optional[str] = None, current_user: CurrentUser | None = Depends(get_optional_current_user), db: AsyncSession = Depends(get_db)):
