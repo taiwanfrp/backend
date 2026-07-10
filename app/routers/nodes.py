@@ -202,3 +202,22 @@ async def update_node(request: NodeUpdateRequest, node_id: int = Path(..., descr
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Node with the same name or host already exists")
 
     return node
+
+@router.delete("/{node_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_node(node_id: int = Path(..., description="Node ID", ge=1, le=2147483647), current_user: CurrentUser = Depends(RequirePermissions(["node.delete.own"])), db: AsyncSession = Depends(get_db)):
+    """
+    刪除節點的路由, 只有節點擁有者或管理員可以刪除節點
+    """
+    stmt = select(Node).where(Node.id == node_id)
+    result = await db.execute(stmt)
+    node = result.scalar_one_or_none()
+    
+    if not node:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
+    
+    is_admin = "node.delete.all" in current_user.permissions
+    if not is_admin and node.owner_id != current_user.internal_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this node")
+    
+    await db.delete(node)
+    await db.commit()
