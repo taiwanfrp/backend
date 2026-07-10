@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, or_, and_
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 
+from app.utils.validators import validate_public_host
 from app.dependencies import get_optional_current_user, CurrentUser, RequirePermissions
 from app.models import Node, NodeStatus, User
 from app.database import get_db
@@ -19,6 +20,14 @@ class NodeCreateRequest(BaseModel):
     port_start: int = Field(..., ge=1, le=65535)
     port_end: int = Field(..., ge=1, le=65535)
     is_public: bool = True
+    
+    @field_validator("host")
+    @classmethod
+    def check_host(cls, v: str) -> str:
+        """
+        驗證 host 是否為合法的公開 IP 或網域
+        """
+        return validate_public_host(v)
 
 class NodeUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=50)
@@ -28,6 +37,16 @@ class NodeUpdateRequest(BaseModel):
     port_end: Optional[int] = Field(None, ge=1, le=65535)
     status: Optional[NodeStatus]
     is_public: Optional[bool]
+    
+    @field_validator("host")
+    @classmethod
+    def check_host(cls, v: str | None) -> Optional[str]:
+        """
+        驗證 host 是否為合法的公開 IP 或網域
+        """
+        if v is not None:
+            return validate_public_host(v)
+        return v
 
 class NodeResponse(BaseModel):
     id: int
