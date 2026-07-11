@@ -72,5 +72,6 @@ jobs:
       - name: Commit and Push Changes
         run: |
           cd gitops
-          git commit -a -S -m "chore(backend): Update backend image tag to ${{ steps.meta.outputs.TAG }}" || echo "No changes to commit"
+          git status
+          git commit -a -S -m "chore(backend): Update backend image tag to ${{ steps.meta.outputs.TAG }}"
           git push origin main
