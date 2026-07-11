@@ -72,6 +72,8 @@ jobs:
       - name: Commit and Push Changes
         run: |
           cd gitops
+          git config user.name "TaiwanFRP Deploy Bot"
+          git config user.email "deploy@taiwanfrp.me"
           git status
           git commit -a -S -m "chore(backend): Update backend image tag to ${{ steps.meta.outputs.TAG }}"
           git push origin main
