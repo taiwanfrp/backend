@@ -45,7 +45,6 @@ async def discord_login(response: Response):
         value=state,
         max_age=settings.cookie_auth_login_state_max_age,
         path=settings.cookie_path,
-        domain=settings.cookie_domain,
         secure=settings.cookie_secure,
         httponly=settings.cookie_httponly,
         samesite=settings.cookie_samesite   # type: ignore[arg-type]
@@ -127,7 +126,6 @@ async def discord_callback(request: Request, code: str, state: str, db: AsyncSes
         value=session_token,
         max_age=settings.cookie_auth_max_age,
         path=settings.cookie_path,
-        domain=settings.cookie_domain,
         secure=settings.cookie_secure,
         httponly=settings.cookie_httponly,
         samesite=settings.cookie_samesite   # type: ignore[arg-type]
@@ -135,7 +133,6 @@ async def discord_callback(request: Request, code: str, state: str, db: AsyncSes
     response.delete_cookie(
         key=settings.cookie_auth_login_state_name,
         path=settings.cookie_path,
-        domain=settings.cookie_domain,
     )  # 刪除 state cookie
     
     # 在 Redis 中存儲驗證碼或用戶信息, 以便後續驗證使用
@@ -168,6 +165,5 @@ async def logout(request: Request, response: Response, redis: Redis = Depends(ge
     response.delete_cookie(
         key=settings.cookie_auth_name,
         path=settings.cookie_path,
-        domain=settings.cookie_domain,
     )  # 刪除 session
     return

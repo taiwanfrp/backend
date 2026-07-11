@@ -19,7 +19,6 @@ async def auth_exception_handler(request: Request, exc: AuthException) -> JSONRe
     )
     response.delete_cookie(
         key=settings.cookie_auth_name,
-        path=settings.cookie_path,
-        domain=settings.cookie_domain
+        path=settings.cookie_path
     )
     return response

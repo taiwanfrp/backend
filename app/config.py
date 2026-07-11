@@ -19,7 +19,6 @@ class Settings(BaseSettings):
     cookie_path: str = "/"
     cookie_samesite: str = "lax"
     cookie_secure: bool = True
-    cookie_domain: str = "localhost"
     
     discord_client_id: str = ""
     discord_client_secret: str = ""
