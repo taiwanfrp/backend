@@ -32,3 +32,5 @@ exclude = [
 pythonpath = [
     "."
 ]
+[tool.pytest_env]
+ENV_FILE = ".env.test"
