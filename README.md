@@ -10,6 +10,10 @@ Development is done in the `main` branch. The `release` branch is the latest sta
 
 本專案使用 `uv` 進行套件管理：
 ```bash
+uv sync --no-dev
+```
+或需要開發環境的套件：
+```bash
 uv sync
 ```
 
@@ -30,7 +34,7 @@ uv run alembic upgrade head
 ## 啟動伺服器
 
 ```bash
-uv run uvicorn app.main:app --reload
+fastapi run
 ```
 伺服器將運行於 http://127.0.0.1:8000
 可前往 http://127.0.0.1:8000/docs 查看 API Swagger
@@ -41,11 +45,16 @@ uv run uvicorn app.main:app --reload
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/v1/auth/discord/login` | 回傳 Discord OAuth2 授權網址並 307 重新導向 |
-| `POST` | `/api/v1/auth/discord/callback` | 從 Discord 回來的 code 去跟 Discord 換取資料，確認身分後 setCookie |
+| `GET` | `/api/v1/auth/discord/login` | 回傳 Discord OAuth2 授權網址並 307 重新導向 |
+| `GET` | `/api/v1/auth/discord/callback` | 從 Discord 回來的 code 去跟 Discord 換取資料，確認身分後 setCookie |
 | `POST` | `/api/v1/auth/logout` | 登出並清除 session cookie |
-| `GET`  | `/api/v1/auth/me` | 回傳使用者資訊 |
+| `GET`  | `/api/v1/users/me` | 回傳使用者資訊 |
+| `GET`  | `/api/v1/nodes` | 回傳當前使用者身份可見的節點列表 |
+| `GET`  | `/api/v1/nodes/{node_id}` | 回傳當前使用者身份可見的單一 節點資訊 |
+| `POST` | `/api/v1/nodes` | 新增節點 (需有 `node.create` 權限) |
+| `PATCH` | `/api/v1/nodes/{node_id}` | 更新節點 (需有 `node.update.own` 權限) |
+| `DELETE` | `/api/v1/nodes/{node_id}` | 刪除節點 (需有 `node.delete.own` 權限) |
 
 ---
 
-Note: 登入的使用者帳號狀態檢查與啟用帳號接口尚未實做
+Note: 帳號啟用帳號接口尚未實做
