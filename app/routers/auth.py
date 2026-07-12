@@ -1,6 +1,7 @@
 import httpx2
 import json
 import secrets
+from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,7 +37,6 @@ async def discord_login(response: Response):
         "state": state,
     }
     
-    from urllib.parse import urlencode
     auth_url = f"{DISCORD_AUTH_URL}?{urlencode(params)}"
     
     redirect_response = RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
