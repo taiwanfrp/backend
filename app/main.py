@@ -2,6 +2,11 @@ import tomllib
 from pathlib import Path
 from fastapi import FastAPI
 
+from app.limiter import limiter
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
 ROOT_DIR = Path(__file__).parent.parent
 TOML_PATH = ROOT_DIR / "pyproject.toml"
 
@@ -13,6 +18,10 @@ app = FastAPI(
     version=pyproject_data.get("version", "0.1.0"),
     description=pyproject_data.get("description", "")
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+app.add_middleware(SlowAPIMiddleware)
 
 from app.middlewares.request_timer import RequestTimerMiddleware    # noqa: E402
 app.add_middleware(RequestTimerMiddleware)

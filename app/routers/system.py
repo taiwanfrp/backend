@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
 from redis.asyncio import Redis
 import asyncmy  # type: ignore
 import asyncpg  # type: ignore
@@ -7,6 +7,7 @@ from sqlalchemy.engine import make_url
 
 from app.config import settings
 from app.redis_client import get_redis
+from app.limiter import limiter
 
 router = APIRouter(tags=["system"])
 
@@ -55,7 +56,9 @@ async def check_mysql_connection() -> bool:
     raise ValueError("/status only supports MySQL or PostgreSQL DB_URL in the current setup")
 
 @router.get("/status")
-async def health_check(redis: Redis = Depends(get_redis)) -> dict[str, str]:
+@limiter.limit("10/minute") # type: ignore[arg-type]
+@limiter.limit("300/hour")  # type: ignore[arg-type]
+async def health_check(request: Request, response: Response, redis: Redis = Depends(get_redis)) -> dict[str, str]:
     """
     健康檢查端點，檢查資料庫和 Redis 連線狀態
     """

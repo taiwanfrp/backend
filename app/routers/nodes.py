@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Path
+from fastapi import APIRouter, Depends, HTTPException, status, Path, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, or_, and_
@@ -10,6 +10,7 @@ from app.utils.validators import validate_public_host
 from app.dependencies import get_optional_current_user, CurrentUser, RequirePermissions
 from app.models import Node, NodeStatus, User
 from app.database import get_db
+from app.limiter import limiter
 
 router = APIRouter(prefix="/api/v1/nodes", tags=["Nodes"])
 
@@ -64,7 +65,9 @@ class NodeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 @router.get("", response_model=list[NodeResponse])
-async def get_nodes(owner: Optional[str] = None, current_user: CurrentUser | None = Depends(get_optional_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("60/minute")    # type: ignore[arg-type]
+@limiter.limit("1000/hour")    # type: ignore[arg-type]
+async def get_nodes(request: Request, response: Response, owner: Optional[str] = None, current_user: CurrentUser | None = Depends(get_optional_current_user), db: AsyncSession = Depends(get_db)):
     """
     獲取節點列表的路由, 根據使用者權限返回對應可見的節點列表
     - 未登入、一般使用者: 僅能看到 ACTIVE 且 is_public=True 的節點
@@ -102,7 +105,9 @@ async def get_nodes(owner: Optional[str] = None, current_user: CurrentUser | Non
     return result.scalars().all()
 
 @router.get("/{node_id}", response_model=NodeResponse)
-async def get_node(node_id: int = Path(..., description="Node ID", ge=1, le=2147483647), current_user: CurrentUser | None = Depends(get_optional_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("60/minute")    # type: ignore[arg-type]
+@limiter.limit("1000/hour")    # type: ignore[arg-type]
+async def get_node(request: Request, response: Response, node_id: int = Path(..., description="Node ID", ge=1, le=2147483647), current_user: CurrentUser | None = Depends(get_optional_current_user), db: AsyncSession = Depends(get_db)):
     """
     獲取單個節點的路由, 根據使用者權限返回對應可見的節點資訊
     - 未登入、一般使用者: 僅能看到 ACTIVE 且 is_public=True 的節點
@@ -136,7 +141,9 @@ async def get_node(node_id: int = Path(..., description="Node ID", ge=1, le=2147
     return node
 
 @router.post("", response_model=NodeResponse, status_code=status.HTTP_201_CREATED)
-async def create_node(request: NodeCreateRequest, current_user: CurrentUser = Depends(RequirePermissions(["node.create"])), db: AsyncSession = Depends(get_db)):
+@limiter.limit("3/hour")   # type: ignore[arg-type]
+@limiter.limit("5/day")   # type: ignore[arg-type]
+async def create_node(request: NodeCreateRequest, response: Response, current_user: CurrentUser = Depends(RequirePermissions(["node.create"])), db: AsyncSession = Depends(get_db)):
     """
     建立新的 FRP 節點, 預設狀態為 DRAFT
     """
@@ -165,7 +172,9 @@ async def create_node(request: NodeCreateRequest, current_user: CurrentUser = De
     return new_node
 
 @router.patch("/{node_id}", response_model=NodeResponse)
-async def update_node(request: NodeUpdateRequest, node_id: int = Path(..., description="Node ID", ge=1, le=2147483647), current_user: CurrentUser = Depends(RequirePermissions(["node.update.own"])), db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/hour")  # type: ignore[arg-type]
+@limiter.limit("30/day")  # type: ignore[arg-type]
+async def update_node(request: NodeUpdateRequest, response: Response, node_id: int = Path(..., description="Node ID", ge=1, le=2147483647), current_user: CurrentUser = Depends(RequirePermissions(["node.update.own"])), db: AsyncSession = Depends(get_db)):
     """
     更新節點資訊的路由, 只有節點擁有者或管理員可以更新節點資訊
     """
@@ -222,7 +231,9 @@ async def update_node(request: NodeUpdateRequest, node_id: int = Path(..., descr
     return node
 
 @router.delete("/{node_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_node(node_id: int = Path(..., description="Node ID", ge=1, le=2147483647), current_user: CurrentUser = Depends(RequirePermissions(["node.delete.own"])), db: AsyncSession = Depends(get_db)):
+@limiter.limit("3/hour")  # type: ignore[arg-type]
+@limiter.limit("5/day")  # type: ignore[arg-type]
+async def delete_node(request: Request, response: Response, node_id: int = Path(..., description="Node ID", ge=1, le=2147483647), current_user: CurrentUser = Depends(RequirePermissions(["node.delete.own"])), db: AsyncSession = Depends(get_db)):
     """
     刪除節點的路由, 只有節點擁有者或管理員可以刪除節點
     """

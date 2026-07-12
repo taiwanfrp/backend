@@ -12,6 +12,7 @@ from app.redis_client import get_redis
 from app.database import get_db
 from app.models import User, Role
 from app.config import settings
+from app.limiter import limiter
 
 # v1 版本的驗證路由, 包含 Discord OAuth2 登入流程和相關的 Redis 驗證碼管理
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
@@ -22,7 +23,9 @@ DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
 DISCORD_USER_URL = "https://discord.com/api/users/@me"
 
 @router.get("/discord/login", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-async def discord_login(response: Response):
+@limiter.limit("5/hour")  # type: ignore[arg-type]
+@limiter.limit("20/day")  # type: ignore[arg-type]
+async def discord_login(request: Request, response: Response):
     """
     生成 Discord OAuth2 登入 URL 並重定向用戶, 同時產生並存儲 CSRF state 防止 CSRF 攻擊
     """
@@ -53,7 +56,9 @@ async def discord_login(response: Response):
     return redirect_response
 
 @router.get("/discord/callback")
-async def discord_callback(request: Request, code: str, state: str, db: AsyncSession = Depends(get_db), redis: Redis = Depends(get_redis)):
+@limiter.limit("5/hour")  # type: ignore[arg-type]
+@limiter.limit("20/day")  # type: ignore[arg-type]
+async def discord_callback(request: Request, response: Response, code: str, state: str, db: AsyncSession = Depends(get_db), redis: Redis = Depends(get_redis)):
     """
     處理 Discord OAuth2 回調, 驗證 state 並交換 access token
     """
@@ -154,6 +159,8 @@ async def discord_callback(request: Request, code: str, state: str, db: AsyncSes
     return response
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/hour")  # type: ignore[arg-type]
+@limiter.limit("20/day")  # type: ignore[arg-type]
 async def logout(request: Request, response: Response, redis: Redis = Depends(get_redis)):
     """
     處理用戶登出, 刪除 session cookie 和 Redis 中的 session
