@@ -9,6 +9,7 @@ on:
       - '.github/workflows/build-push-update.yml'
       - 'pyproject.toml'
       - 'uv.lock'
+      - 'Dockerfile'
 
 jobs:
   build_and_update:
