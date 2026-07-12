@@ -44,7 +44,7 @@ def test_validate_public_host_invalid(host):
     """
     測試 validate_public_host 函數對非法 IP 與網域的驗證
     """
-    with pytest.raises(ValueError) as exec_info:
+    with pytest.raises(ValueError) as exc_info:
         validate_public_host(host)
         
-    print(f"Invalid host correctly raised ValueError: {host}, error message: {exec_info.value}")
+    print(f"Invalid host correctly raised ValueError: {host}, error message: {exc_info.value}")
