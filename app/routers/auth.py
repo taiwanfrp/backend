@@ -160,7 +160,25 @@ async def logout(request: Request, response: Response, redis: Redis = Depends(ge
     """
     session_token = request.cookies.get(settings.cookie_auth_name)
     if session_token:
-        await redis.delete(f"auth:session:{session_token}")
+        session_key = f"auth:session:{session_token}"
+        permissions_key = None
+
+        session_raw = await redis.get(session_key)
+        if session_raw:
+            try:
+                if isinstance(session_raw, bytes):
+                    session_raw = session_raw.decode("utf-8")
+                session_data = json.loads(session_raw)
+                internal_user_id = session_data.get("internal_user_id")
+                if internal_user_id is not None:
+                    permissions_key = f"auth:permissions:{internal_user_id}"
+            except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+                permissions_key = None
+
+        if permissions_key:
+            await redis.delete(session_key, permissions_key)
+        else:
+            await redis.delete(session_key)
     
     response.delete_cookie(
         key=settings.cookie_auth_name,
