@@ -50,6 +50,7 @@ config.set_main_option("sqlalchemy.url", db_url.render_as_string(hide_password=F
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 from app.database import Base   # noqa: E402
+import app.models   # 確保模型被導入, 以便 Alembic 能夠找到 metadata    # noqa: E402, F401
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

@@ -47,6 +47,7 @@ class User(Base):
     roles: Mapped[list["Role"]] = relationship("Role", secondary="user_roles", back_populates="users")
     nodes: Mapped[list["Node"]] = relationship("Node", back_populates="owner", cascade="all, delete-orphan")
     allowed_nodes: Mapped[list["Node"]] = relationship("Node", secondary="node_guests", back_populates="allowed_users")
+    tunnels: Mapped[list["Tunnel"]] = relationship("Tunnel", back_populates="owner", cascade="all, delete-orphan")
 
 class UserAuthMethod(Base):
     __tablename__ = "user_auth_methods"
@@ -133,3 +134,41 @@ class Node(Base):
     
     owner: Mapped[User] = relationship("User", back_populates="nodes")
     allowed_users: Mapped[list[User]] = relationship("User", secondary=node_guests, back_populates="allowed_nodes")
+    tunnels: Mapped[list["Tunnel"]] = relationship("Tunnel", back_populates="node", cascade="all, delete-orphan")
+
+# tunnel
+class TunnelProtocol(str, enum.Enum):
+    TCP = "tcp"
+    UDP = "udp"
+    HTTP = "http"
+    HTTPS = "https"
+    TCPMUX = "tcpmux"
+    STCP = "stcp"
+    SUDP = "sudp"
+
+class TunnelStatus(str, enum.Enum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+    
+class Tunnel(Base):
+    __tablename__ = "tunnels"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuidv7)
+    name: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    node_id: Mapped[int] = mapped_column(Integer, ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False, index=True)
+    protocol: Mapped[TunnelProtocol] = mapped_column(Enum(TunnelProtocol), nullable=False, default=TunnelProtocol.TCP)
+    local_ip: Mapped[str] = mapped_column(String(50), nullable=False, default="127.0.0.1")
+    local_port: Mapped[int] = mapped_column(Integer, nullable=False)
+    remote_port: Mapped[int | None] = mapped_column(Integer, nullable=True) # TCP/UDP 必填, HTTP/HTTPS 為 80/443, STCP/SUDP 為空
+    custom_domain: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True) # HTTP/HTTPS 必填, 其他為空
+    is_kcp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_proxy_protocol_v2_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    status: Mapped[TunnelStatus] = mapped_column(Enum(TunnelStatus), nullable=False, default=TunnelStatus.ACTIVE)   # 僅管理員可修改
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=get_utc_now, onupdate=get_utc_now)
+    
+    owner: Mapped[User] = relationship("User", back_populates="tunnels")
+    node: Mapped[Node] = relationship("Node", back_populates="tunnels")
