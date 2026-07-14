@@ -242,8 +242,8 @@ async def create_tunnel(
 async def update_tunnel(
     request: Request,
     response: Response,
+    tunnel_data: TunnelUpdateRequest,
     tunnel_id: str = Path(..., min_length=36, max_length=36, description="隧道的 UUID"),
-    tunnel_data: TunnelUpdateRequest = Depends(),
     current_user: CurrentUser = Depends(RequirePermissions(["tunnel.update.own"])),
     db: AsyncSession = Depends(get_db),
 ):
