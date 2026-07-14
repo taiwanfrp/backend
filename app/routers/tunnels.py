@@ -147,7 +147,7 @@ async def create_tunnel(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="A tunnel with the same unique field already exists",
+            detail="Tunnel with the same already exists",
         )
 
     return new_tunnel
