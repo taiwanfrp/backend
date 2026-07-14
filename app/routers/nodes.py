@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Optional
 from datetime import datetime
 
-from app.utils.validators import validate_public_host
+from app.utils.validators import validate_host
 from app.dependencies import get_optional_current_user, CurrentUser, RequirePermissions
 from app.models import Node, NodeStatus, User
 from app.database import get_db
@@ -28,7 +28,7 @@ class NodeCreateRequest(BaseModel):
         """
         驗證 host 是否為合法的公開 IP 或網域
         """
-        return validate_public_host(v)
+        return validate_host(v)
 
 class NodeUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=50)
@@ -46,7 +46,7 @@ class NodeUpdateRequest(BaseModel):
         驗證 host 是否為合法的公開 IP 或網域
         """
         if v is not None:
-            return validate_public_host(v)
+            return validate_host(v)
         return v
 
 class NodeResponse(BaseModel):
@@ -143,21 +143,21 @@ async def get_node(request: Request, response: Response, node_id: int = Path(...
 @router.post("", response_model=NodeResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("3/hour")   # type: ignore[arg-type]
 @limiter.limit("5/day")   # type: ignore[arg-type]
-async def create_node(request: NodeCreateRequest, response: Response, current_user: CurrentUser = Depends(RequirePermissions(["node.create"])), db: AsyncSession = Depends(get_db)):
+async def create_node(request: Request, response: Response, payload: NodeCreateRequest, current_user: CurrentUser = Depends(RequirePermissions(["node.create"])), db: AsyncSession = Depends(get_db)):
     """
     建立新的 FRP 節點, 預設狀態為 DRAFT
     """
-    if request.port_start > request.port_end:
+    if payload.port_start > payload.port_end:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="port_start must be less than or equal to port_end")
     
     new_node = Node(
-        name=request.name,
-        description=request.description,
-        host=request.host,
-        port_start=request.port_start,
-        port_end=request.port_end,
+        name=payload.name,
+        description=payload.description,
+        host=payload.host,
+        port_start=payload.port_start,
+        port_end=payload.port_end,
         status=NodeStatus.DRAFT,
-        is_public=request.is_public,
+        is_public=payload.is_public,
         owner_id=current_user.internal_user_id
     )
     
@@ -174,7 +174,7 @@ async def create_node(request: NodeCreateRequest, response: Response, current_us
 @router.patch("/{node_id}", response_model=NodeResponse)
 @limiter.limit("5/hour")  # type: ignore[arg-type]
 @limiter.limit("30/day")  # type: ignore[arg-type]
-async def update_node(request: NodeUpdateRequest, response: Response, node_id: int = Path(..., description="Node ID", ge=1, le=2147483647), current_user: CurrentUser = Depends(RequirePermissions(["node.update.own"])), db: AsyncSession = Depends(get_db)):
+async def update_node(request: Request, response: Response, payload: NodeUpdateRequest, node_id: int = Path(..., description="Node ID", ge=1, le=2147483647), current_user: CurrentUser = Depends(RequirePermissions(["node.update.own"])), db: AsyncSession = Depends(get_db)):
     """
     更新節點資訊的路由, 只有節點擁有者或管理員可以更新節點資訊
     """
@@ -189,7 +189,7 @@ async def update_node(request: NodeUpdateRequest, response: Response, node_id: i
     if not is_admin and node.owner_id != current_user.internal_user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this node")
     
-    update_data = request.model_dump(exclude_unset=True)
+    update_data = payload.model_dump(exclude_unset=True)
     if not update_data:
         return node  # No changes to apply
     

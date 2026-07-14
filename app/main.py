@@ -37,8 +37,9 @@ async def read_item(item_id: int) -> dict[str, str | int]:
 from app.exception_handlers import AuthException, auth_exception_handler    # noqa: E402
 app.add_exception_handler(AuthException, auth_exception_handler)    # type: ignore[arg-type]
 
-from app.routers import auth, users, system, nodes  # noqa: E402
+from app.routers import auth, users, system, nodes, tunnels  # noqa: E402
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(system.router)
 app.include_router(nodes.router)
+app.include_router(tunnels.router)
