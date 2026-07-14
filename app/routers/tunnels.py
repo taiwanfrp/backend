@@ -158,7 +158,7 @@ async def get_tunnel(
 async def create_tunnel(
     request: Request,
     response: Response,
-    tunnel_data: TunnelCreateRequest = Depends(),
+    tunnel_data: TunnelCreateRequest,
     current_user: CurrentUser = Depends(RequirePermissions(["tunnel.create"])),
     db: AsyncSession = Depends(get_db),
 ):
