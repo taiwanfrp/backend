@@ -53,18 +53,23 @@ async def check_mysql_connection() -> bool:
         finally:
             await conn.close()
 
-    raise ValueError("/status only supports MySQL or PostgreSQL DB_URL in the current setup")
+    raise ValueError(
+        "/status only supports MySQL or PostgreSQL DB_URL in the current setup"
+    )
+
 
 @router.get("/status")
-@limiter.limit("10/minute") # type: ignore[arg-type]
+@limiter.limit("10/minute")  # type: ignore[arg-type]
 @limiter.limit("300/hour")  # type: ignore[arg-type]
-async def health_check(request: Request, response: Response, redis: Redis = Depends(get_redis)) -> dict[str, str]:
+async def health_check(
+    request: Request, response: Response, redis: Redis = Depends(get_redis)
+) -> dict[str, str]:
     """
     健康檢查端點，檢查資料庫和 Redis 連線狀態
     """
     db_status = "ok"
     redis_status = "ok"
-    
+
     # 檢查資料庫連線
     try:
         if not await check_mysql_connection():
@@ -72,19 +77,19 @@ async def health_check(request: Request, response: Response, redis: Redis = Depe
     except Exception as e:
         print(f"Database connection error: {e}")
         db_status = "down"
-    
+
     # 檢查 Redis 連線
     try:
         await redis.ping()
     except Exception as e:
         print(f"Redis connection error: {e}")
         redis_status = "down"
-        
+
     from app.main import pyproject_data
-    
+
     return {
         "api": "ok",
         "version": pyproject_data.get("version", "0.1.0"),
         "database": db_status,
-        "redis": redis_status
+        "redis": redis_status,
     }

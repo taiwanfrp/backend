@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.exception_handlers import AuthException
 
+
 class CurrentUser(BaseModel):
     internal_user_id: str
     internal_account_status: str
@@ -21,39 +22,60 @@ class CurrentUser(BaseModel):
     verified: bool
     permissions: list[str] = []
 
-async def get_current_user(request: Request, redis: Redis = Depends(get_redis)) -> CurrentUser:
+
+async def get_current_user(
+    request: Request, redis: Redis = Depends(get_redis)
+) -> CurrentUser:
     """
     從 Redis 中獲取當前用戶信息的依賴函數, 用於保護需要驗證的路由
     """
     session_token = request.cookies.get(settings.cookie_auth_name)
     if not session_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+
     user_data_json = await redis.get(f"auth:session:{session_token}")
     if not user_data_json:
-        raise AuthException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired or invalid")  # 刪除無效 session cookie
-    
+        raise AuthException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired or invalid",
+        )  # 刪除無效 session cookie
+
     try:
         user_data = json.loads(user_data_json)
-        
+
         if user_data.get("internal_account_status") not in ["active"]:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Account is {user_data.get('internal_account_status')}")
-        
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Account is {user_data.get('internal_account_status')}",
+            )
+
         internal_user_id = user_data["internal_user_id"]
-        
+
         permissions_json = await redis.get(f"auth:permissions:{internal_user_id}")
         permissions = json.loads(permissions_json) if permissions_json else []
-        
-        await redis.expire(f"auth:session:{session_token}", settings.cookie_auth_max_age)  # 延長 session 有效期
+
+        await redis.expire(
+            f"auth:session:{session_token}", settings.cookie_auth_max_age
+        )  # 延長 session 有效期
         if permissions_json:
-            await redis.expire(f"auth:permissions:{internal_user_id}", settings.cookie_auth_max_age)  # 延長 permissions 有效期
-        
+            await redis.expire(
+                f"auth:permissions:{internal_user_id}", settings.cookie_auth_max_age
+            )  # 延長 permissions 有效期
+
         user_data["permissions"] = permissions
         return CurrentUser(**user_data)
     except (json.JSONDecodeError, KeyError) as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid session data") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invalid session data",
+        ) from e
 
-async def get_optional_current_user(request:Request, redis: Redis = Depends(get_redis)) -> CurrentUser | None:
+
+async def get_optional_current_user(
+    request: Request, redis: Redis = Depends(get_redis)
+) -> CurrentUser | None:
     """
     可選用戶驗證依賴函數
     若有合法的 session cookie, 則返回 CurrentUser, 否則返回 None
@@ -62,46 +84,57 @@ async def get_optional_current_user(request:Request, redis: Redis = Depends(get_
     session_token = request.cookies.get(settings.cookie_auth_name)
     if not session_token:
         return None
-    
+
     user_data_json = await redis.get(f"auth:session:{session_token}")
     if not user_data_json:
         return None
-    
+
     try:
         user_data = json.loads(user_data_json)
-        
+
         if user_data.get("internal_account_status") not in ["active"]:
             return None
-        
+
         internal_user_id = user_data["internal_user_id"]
-        
+
         permissions_json = await redis.get(f"auth:permissions:{internal_user_id}")
         permissions = json.loads(permissions_json) if permissions_json else []
-        
-        await redis.expire(f"auth:session:{session_token}", settings.cookie_auth_max_age)  # 延長 session 有效期
+
+        await redis.expire(
+            f"auth:session:{session_token}", settings.cookie_auth_max_age
+        )  # 延長 session 有效期
         if permissions_json:
-            await redis.expire(f"auth:permissions:{internal_user_id}", settings.cookie_auth_max_age)  # 延長 permissions 有效期
-        
+            await redis.expire(
+                f"auth:permissions:{internal_user_id}", settings.cookie_auth_max_age
+            )  # 延長 permissions 有效期
+
         user_data["permissions"] = permissions
         return CurrentUser(**user_data)
     except (json.JSONDecodeError, KeyError):
         return None
+
 
 class RequirePermissions:
     """
     權限驗證攔截器
     用法: Depends(RequirePermissions(["tunnel.read.own", "subdomain.create"]))
     """
+
     def __init__(self, required_permissions: list[str]):
         self.required_permissions = set(required_permissions)
-    
-    def __call__(self, current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+
+    def __call__(
+        self, current_user: CurrentUser = Depends(get_current_user)
+    ) -> CurrentUser:
         user_permissions = set(current_user.permissions)
-        
+
         missing_permissions = self.required_permissions - user_permissions
-        
+
         if missing_permissions:
             missing_list = sorted(list(missing_permissions))
             missing_str = ", ".join(f"'{permission}'" for permission in missing_list)
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Permission denied. Missing permissions: [{missing_str}]")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission denied. Missing permissions: [{missing_str}]",
+            )
         return current_user

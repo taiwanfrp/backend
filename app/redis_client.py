@@ -7,6 +7,7 @@ redis_pool = redis.ConnectionPool.from_url(
     max_connections=50,
 )
 
+
 async def get_redis():
     """
     提供給 FastAPI Depends 注入使用的產生器

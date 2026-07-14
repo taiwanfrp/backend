@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/v1/tunnels", tags=["Tunnels"])
 
 SUPPORTED_PROTOCOLS = {TunnelProtocol.TCP, TunnelProtocol.UDP}
 
+
 class TunnelCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     description: Optional[str] = Field(None, max_length=255)
@@ -24,10 +25,10 @@ class TunnelCreateRequest(BaseModel):
     local_ip: str = Field(default="127.0.0.1", max_length=50)
     local_port: int = Field(..., ge=1, le=65535)
     remote_port: Optional[int] = Field(None, ge=1, le=65535)
-    
+
     is_kcp_enabled: bool = Field(default=True)
     is_proxy_protocol_v2_enabled: bool = Field(default=False)
-    
+
     @field_validator("protocol")
     @classmethod
     def check_protocol_supported(cls, v: str) -> str:
@@ -35,9 +36,11 @@ class TunnelCreateRequest(BaseModel):
         檢查選擇的協定是否被支援
         """
         if v not in SUPPORTED_PROTOCOLS:
-            raise ValueError(f"Unsupported protocol: {v}. Supported protocols are: {', '.join(SUPPORTED_PROTOCOLS)}")
+            raise ValueError(
+                f"Unsupported protocol: {v}. Supported protocols are: {', '.join(SUPPORTED_PROTOCOLS)}"
+            )
         return v
-    
+
     @field_validator("local_ip")
     @classmethod
     def check_local_ip_valid(cls, v: str) -> str:
@@ -45,7 +48,8 @@ class TunnelCreateRequest(BaseModel):
         驗證 local_ip 是否為合法的 IP (包含私有 IP) 或網域
         """
         return validate_host(v, allow_private=True)
-    
+
+
 class TunnelResponse(BaseModel):
     id: str
     name: str
@@ -61,38 +65,65 @@ class TunnelResponse(BaseModel):
     status: TunnelStatus
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
+
 
 @router.post("", response_model=TunnelResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/hour")  # type: ignore[arg-type]
 @limiter.limit("10/day")  # type: ignore[arg-type]
-async def create_tunnel(request: Request, response: Response, tunnel_data: TunnelCreateRequest, current_user: CurrentUser = Depends(RequirePermissions(["tunnel.create"])), db: AsyncSession = Depends(get_db)):
+async def create_tunnel(
+    request: Request,
+    response: Response,
+    tunnel_data: TunnelCreateRequest,
+    current_user: CurrentUser = Depends(RequirePermissions(["tunnel.create"])),
+    db: AsyncSession = Depends(get_db),
+):
     """
     建立新的 FRP 隧道
     """
     result = await db.execute(select(Node).where(Node.id == tunnel_data.node_id))
     node = result.scalar_one_or_none()
-    
+
     if not node:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Node not found"
+        )
     if node.status != NodeStatus.ACTIVE:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Node is not available")
-    
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Node is not available"
+        )
+
     # 檢查 remote_port 是否位於 node 的可用範圍內
     if tunnel_data.protocol == {TunnelProtocol.TCP, TunnelProtocol.UDP}:
         if not tunnel_data.remote_port:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="remote_port is required for TCP and UDP protocols")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="remote_port is required for TCP and UDP protocols",
+            )
         if not (node.port_start <= tunnel_data.remote_port <= node.port_end):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"remote_port must be between {node.port_start} and {node.port_end}")
-    
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"remote_port must be between {node.port_start} and {node.port_end}",
+            )
+
     # 檢查同一個 node 上是否已經存在相同的 remote_port
     if tunnel_data.remote_port:
-        result = await db.execute(select(Tunnel).where(and_(Tunnel.node_id == tunnel_data.node_id, Tunnel.remote_port == tunnel_data.remote_port)))
+        result = await db.execute(
+            select(Tunnel).where(
+                and_(
+                    Tunnel.node_id == tunnel_data.node_id,
+                    Tunnel.remote_port == tunnel_data.remote_port,
+                )
+            )
+        )
         existing_tunnel = result.scalar_one_or_none()
         if existing_tunnel:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="remote_port is already in use on this node")
-        
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="remote_port is already in use on this node",
+            )
+
     new_tunnel = Tunnel(
         name=tunnel_data.name,
         description=tunnel_data.description,
@@ -107,13 +138,16 @@ async def create_tunnel(request: Request, response: Response, tunnel_data: Tunne
         is_enabled=True,
         status=TunnelStatus.ACTIVE,
     )
-    
+
     db.add(new_tunnel)
     try:
         await db.commit()
         await db.refresh(new_tunnel)
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tunnel with the same already exists")
-    
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tunnel with the same already exists",
+        )
+
     return new_tunnel

@@ -25,6 +25,11 @@ dev = [
     "pytest>=9.0.3",
     "ruff>=0.15.15",
 ]
+[tool.ruff]
+extend-exclude = [
+    "**/*_pb2.py",
+    "cover/",
+]
 [tool.mypy]
 exclude = [
     "cover/"

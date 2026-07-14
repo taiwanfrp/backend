@@ -10,6 +10,7 @@ from alembic import context
 
 import os
 import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 # this is the Alembic Config object, which provides
@@ -21,7 +22,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-from app.config import settings # noqa: E402
+from app.config import settings  # noqa: E402
 
 database_url = make_url(settings.db_url)
 
@@ -49,8 +50,9 @@ config.set_main_option("sqlalchemy.url", db_url.render_as_string(hide_password=F
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-from app.database import Base   # noqa: E402
-import app.models   # 確保模型被導入, 以便 Alembic 能夠找到 metadata    # noqa: E402, F401
+from app.database import Base  # noqa: E402
+import app.models  # 確保模型被導入, 以便 Alembic 能夠找到 metadata    # noqa: E402, F401
+
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

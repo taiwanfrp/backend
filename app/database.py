@@ -21,7 +21,9 @@ elif settings.db_type == "postgresql":
         drivername="postgresql+asyncpg",
         query=filtered_query,
     )
-    CONNECT_ARGS = {"ssl": True} if sslmode in {"require", "verify-ca", "verify-full"} else {}
+    CONNECT_ARGS = (
+        {"ssl": True} if sslmode in {"require", "verify-ca", "verify-full"} else {}
+    )
 else:
     raise ValueError(f"Unsupported database type: {settings.db_type}")
 
@@ -41,8 +43,10 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
+
 class Base(DeclarativeBase):
     pass
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
