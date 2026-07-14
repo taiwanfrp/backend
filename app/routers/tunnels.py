@@ -95,7 +95,7 @@ async def create_tunnel(
         )
 
     # 檢查 remote_port 是否位於 node 的可用範圍內
-    if tunnel_data.protocol == {TunnelProtocol.TCP, TunnelProtocol.UDP}:
+    if tunnel_data.protocol in {TunnelProtocol.TCP, TunnelProtocol.UDP}:
         if not tunnel_data.remote_port:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -147,7 +147,7 @@ async def create_tunnel(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Tunnel with the same already exists",
+            detail="A tunnel with the same unique field already exists",
         )
 
     return new_tunnel
