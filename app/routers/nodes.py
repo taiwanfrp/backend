@@ -2,70 +2,24 @@ from fastapi import APIRouter, Depends, HTTPException, status, Path, Request, Re
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, or_, and_
-from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Optional
-from datetime import datetime
 
-from app.utils.validators import validate_host
 from app.dependencies import get_optional_current_user, CurrentUser, RequirePermissions
 from app.models import Node, NodeStatus, User
 from app.database import get_db
 from app.limiter import limiter
 
+from app.schemas.nodes import (
+    NodeCreateRequest,
+    NodeUpdateRequest,
+    NodeResponse,
+    NODE_CREATE_DOC,
+    NODE_UPDATE_DOC,
+    NODE_DELETE_DOC,
+    NODE_NOT_FOUND_DOC,
+)
+
 router = APIRouter(prefix="/api/v1/nodes", tags=["Nodes"])
-
-
-class NodeCreateRequest(BaseModel):
-    name: str = Field(..., min_length=2, max_length=50)
-    description: Optional[str] = Field(None, max_length=255)
-    host: str = Field(..., max_length=100)
-    port_start: int = Field(..., ge=1, le=65535)
-    port_end: int = Field(..., ge=1, le=65535)
-    is_public: bool = True
-
-    @field_validator("host")
-    @classmethod
-    def check_host(cls, v: str) -> str:
-        """
-        驗證 host 是否為合法的公開 IP 或網域
-        """
-        return validate_host(v)
-
-
-class NodeUpdateRequest(BaseModel):
-    name: Optional[str] = Field(None, min_length=2, max_length=50)
-    description: Optional[str] = Field(None, max_length=255)
-    host: Optional[str] = Field(None, max_length=100)
-    port_start: Optional[int] = Field(None, ge=1, le=65535)
-    port_end: Optional[int] = Field(None, ge=1, le=65535)
-    status: Optional[NodeStatus]
-    is_public: Optional[bool]
-
-    @field_validator("host")
-    @classmethod
-    def check_host(cls, v: str | None) -> Optional[str]:
-        """
-        驗證 host 是否為合法的公開 IP 或網域
-        """
-        if v is not None:
-            return validate_host(v)
-        return v
-
-
-class NodeResponse(BaseModel):
-    id: int
-    name: str
-    description: str | None
-    host: str
-    port_start: int
-    port_end: int
-    status: NodeStatus
-    is_public: bool
-    owner_id: str
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 @router.get("", response_model=list[NodeResponse])
@@ -123,7 +77,7 @@ async def get_nodes(
     return result.scalars().all()
 
 
-@router.get("/{node_id}", response_model=NodeResponse)
+@router.get("/{node_id}", response_model=NodeResponse, responses=NODE_NOT_FOUND_DOC)  # type: ignore[arg-type]
 @limiter.limit("60/minute")  # type: ignore[arg-type]
 @limiter.limit("1000/hour")  # type: ignore[arg-type]
 async def get_node(
@@ -174,7 +128,12 @@ async def get_node(
     return node
 
 
-@router.post("", response_model=NodeResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=NodeResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses=NODE_CREATE_DOC,  # type: ignore[arg-type]
+)
 @limiter.limit("3/hour")  # type: ignore[arg-type]
 @limiter.limit("5/day")  # type: ignore[arg-type]
 async def create_node(
@@ -218,7 +177,7 @@ async def create_node(
     return new_node
 
 
-@router.patch("/{node_id}", response_model=NodeResponse)
+@router.patch("/{node_id}", response_model=NodeResponse, responses=NODE_UPDATE_DOC)  # type: ignore[arg-type]
 @limiter.limit("5/hour")  # type: ignore[arg-type]
 @limiter.limit("30/day")  # type: ignore[arg-type]
 async def update_node(
@@ -306,7 +265,11 @@ async def update_node(
     return node
 
 
-@router.delete("/{node_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{node_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=NODE_DELETE_DOC,  # type: ignore[arg-type]
+)
 @limiter.limit("3/hour")  # type: ignore[arg-type]
 @limiter.limit("5/day")  # type: ignore[arg-type]
 async def delete_node(
