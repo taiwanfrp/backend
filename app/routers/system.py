@@ -51,6 +51,16 @@ async def favicon():
     )
 
 
+@router.get("/")
+async def read_root() -> dict[str, str]:
+    return {"message": "Hello, World!"}
+
+
+@router.get("/items/{item_id}")
+async def read_item(item_id: int) -> dict[str, str | int]:
+    return {"item_id": item_id, "description": f"This is item {item_id}"}
+
+
 @router.get("/status")
 @limiter.limit("10/minute")  # type: ignore[arg-type]
 @limiter.limit("300/hour")  # type: ignore[arg-type]
