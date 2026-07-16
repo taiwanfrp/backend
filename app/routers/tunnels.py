@@ -39,7 +39,7 @@ class TunnelCreateRequest(BaseModel):
         """
         if v not in SUPPORTED_PROTOCOLS:
             raise ValueError(
-                f"Unsupported protocol: {v}. Supported protocols are: {', '.join(SUPPORTED_PROTOCOLS)}"
+                f"Unsupported protocol: {v}. Supported protocols are: {', '.join(sorted(p.value for p in SUPPORTED_PROTOCOLS))}"
             )
         return v
 
@@ -63,9 +63,9 @@ class TunnelUpdateRequest(BaseModel):
     local_port: Optional[int] = Field(None, ge=1, le=65535)
     remote_port: Optional[int] = Field(None, ge=1, le=65535)
 
-    is_kcp_enabled: Optional[bool]
-    is_proxy_protocol_v2_enabled: Optional[bool]
-    is_enabled: Optional[bool]
+    is_kcp_enabled: Optional[bool] = Field(None)
+    is_proxy_protocol_v2_enabled: Optional[bool] = Field(None)
+    is_enabled: Optional[bool] = Field(None)
 
     @field_validator("protocol")
     @classmethod
@@ -230,7 +230,7 @@ async def create_tunnel(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Tunnel with the same already exists",
+            detail="A tunnel with the same configuration already exists",
         )
 
     return new_tunnel
@@ -321,7 +321,7 @@ async def update_tunnel(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Tunnel with the same already exists",
+            detail="Tunnel with the same name already exists",
         )
 
     return tunnel
