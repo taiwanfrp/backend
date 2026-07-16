@@ -63,9 +63,9 @@ class TunnelUpdateRequest(BaseModel):
     local_port: Optional[int] = Field(None, ge=1, le=65535)
     remote_port: Optional[int] = Field(None, ge=1, le=65535)
 
-    is_kcp_enabled: Optional[bool]
-    is_proxy_protocol_v2_enabled: Optional[bool]
-    is_enabled: Optional[bool]
+    is_kcp_enabled: Optional[bool] = Field(None)
+    is_proxy_protocol_v2_enabled: Optional[bool] = Field(None)
+    is_enabled: Optional[bool] = Field(None)
 
     @field_validator("protocol")
     @classmethod
