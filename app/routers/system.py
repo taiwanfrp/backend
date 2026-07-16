@@ -10,6 +10,10 @@ from app.database import get_db
 from app.redis_client import get_redis
 from app.limiter import limiter
 
+from app.schemas.system import (
+    HealthCheckResponseModel,
+)
+
 router = APIRouter(tags=["system"])
 
 
@@ -69,7 +73,7 @@ async def health_check(
     response: Response,
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
-) -> dict[str, str]:
+) -> HealthCheckResponseModel:
     """
     健康檢查端點，檢查資料庫和 Redis 連線狀態
     """
@@ -78,12 +82,12 @@ async def health_check(
         check_redis_connection(redis),
     )
 
-    return {
-        "api": "ok",
-        "version": request.app.version,
-        "database": db_status,
-        "redis": redis_status,
-    }
+    return HealthCheckResponseModel(
+        api="ok",
+        version=request.app.version,
+        database=db_status,
+        redis=redis_status,
+    )
 
 
 @router.get("/livez", include_in_schema=False)

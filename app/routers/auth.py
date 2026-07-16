@@ -14,6 +14,10 @@ from app.models import User, Role
 from app.config import settings
 from app.limiter import limiter
 
+from app.schemas.auth import (
+    DISCORD_CALLBACK_DOC,
+)
+
 # v1 版本的驗證路由, 包含 Discord OAuth2 登入流程和相關的 Redis 驗證碼管理
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
 
@@ -60,7 +64,7 @@ async def discord_login(request: Request, response: Response):
     return redirect_response
 
 
-@router.get("/discord/callback")
+@router.get("/discord/callback", responses=DISCORD_CALLBACK_DOC)  # type: ignore[arg-type]
 @limiter.limit("5/hour")  # type: ignore[arg-type]
 @limiter.limit("20/day")  # type: ignore[arg-type]
 async def discord_callback(

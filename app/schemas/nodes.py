@@ -108,10 +108,16 @@ NODE_UPDATE_DOC = {
                             "detail": "port_start must be less than or equal to port_end"
                         },
                     },
-                    "invalid_status": {
-                        "summary": "Cannot manually change status",
+                    "invalid_status_draft": {
+                        "summary": "Cannot manually change status (Draft)",
                         "value": {
                             "detail": "Cannot manually change status while node is in draft state"
+                        },
+                    },
+                    "invalid_status_reviewing": {
+                        "summary": "Cannot manually change status (Reviewing)",
+                        "value": {
+                            "detail": "Cannot manually change status while node is in reviewing state"
                         },
                     },
                 }
