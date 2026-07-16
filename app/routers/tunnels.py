@@ -39,7 +39,7 @@ class TunnelCreateRequest(BaseModel):
         """
         if v not in SUPPORTED_PROTOCOLS:
             raise ValueError(
-                f"Unsupported protocol: {v}. Supported protocols are: {', '.join(SUPPORTED_PROTOCOLS)}"
+                f"Unsupported protocol: {v}. Supported protocols are: {', '.join(sorted(p.value for p in SUPPORTED_PROTOCOLS))}"
             )
         return v
 
