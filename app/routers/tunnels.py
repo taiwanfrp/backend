@@ -230,7 +230,7 @@ async def create_tunnel(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Tunnel with the same already exists",
+            detail="A tunnel with the same configuration already exists",
         )
 
     return new_tunnel
