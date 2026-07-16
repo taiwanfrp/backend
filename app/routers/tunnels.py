@@ -321,7 +321,7 @@ async def update_tunnel(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Tunnel with the same already exists",
+            detail="Tunnel with the same name already exists",
         )
 
     return tunnel
