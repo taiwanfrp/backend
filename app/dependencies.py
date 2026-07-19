@@ -73,45 +73,55 @@ async def get_current_user(
         ) from e
 
 
-async def get_optional_current_user(
-    request: Request, redis: Redis = Depends(get_redis)
-) -> CurrentUser | None:
-    """
-    可選用戶驗證依賴函數
-    若有合法的 session cookie, 則返回 CurrentUser, 否則返回 None
-    不會拋出 HTTPException 401
-    """
-    session_token = request.cookies.get(settings.cookie_auth_name)
-    if not session_token:
-        return None
+class GetOptionalCurrentUser:
+    def __init__(self, allow_suspended: bool = False):
+        self.allow_suspended = allow_suspended
 
-    user_data_json = await redis.get(f"auth:session:{session_token}")
-    if not user_data_json:
-        return None
-
-    try:
-        user_data = json.loads(user_data_json)
-
-        if user_data.get("internal_account_status") not in ["active"]:
+    async def __call__(
+        self, request: Request, redis: Redis = Depends(get_redis)
+    ) -> CurrentUser | None:
+        """
+        可選用戶驗證依賴函數
+        若有合法的 session cookie, 則返回 CurrentUser, 否則返回 None
+        不會拋出 HTTPException 401
+        """
+        session_token = request.cookies.get(settings.cookie_auth_name)
+        if not session_token:
             return None
 
-        internal_user_id = user_data["internal_user_id"]
+        user_data_json = await redis.get(f"auth:session:{session_token}")
+        if not user_data_json:
+            return None
 
-        permissions_json = await redis.get(f"auth:permissions:{internal_user_id}")
-        permissions = json.loads(permissions_json) if permissions_json else []
+        try:
+            user_data = json.loads(user_data_json)
 
-        await redis.expire(
-            f"auth:session:{session_token}", settings.cookie_auth_max_age
-        )  # 延長 session 有效期
-        if permissions_json:
+            allowed_statuses = (
+                ["active", "suspended"] if self.allow_suspended else ["active"]
+            )
+            if user_data.get("internal_account_status") not in allowed_statuses:
+                return None
+
+            internal_user_id = user_data["internal_user_id"]
+
+            permissions_json = await redis.get(f"auth:permissions:{internal_user_id}")
+            permissions = json.loads(permissions_json) if permissions_json else []
+
             await redis.expire(
-                f"auth:permissions:{internal_user_id}", settings.cookie_auth_max_age
-            )  # 延長 permissions 有效期
+                f"auth:session:{session_token}", settings.cookie_auth_max_age
+            )  # 延長 session 有效期
+            if permissions_json:
+                await redis.expire(
+                    f"auth:permissions:{internal_user_id}", settings.cookie_auth_max_age
+                )  # 延長 permissions 有效期
 
-        user_data["permissions"] = permissions
-        return CurrentUser(**user_data)
-    except (json.JSONDecodeError, KeyError):
-        return None
+            user_data["permissions"] = permissions
+            return CurrentUser(**user_data)
+        except (json.JSONDecodeError, KeyError):
+            return None
+
+
+get_optional_current_user = GetOptionalCurrentUser(allow_suspended=False)
 
 
 class RequirePermissions:
