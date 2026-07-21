@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     discord_redirect_uri: str = ""
     discord_oauth2_scope: str = "identify+email+guilds"
 
+    node_region: str = Field(default="unknown-region", validation_alias="REGION")
+    pod_name: str = Field(default="", validation_alias="HOSTNAME")
+    server_id: str = "unknown-server"
+
     @model_validator(mode="after")
     def set_db_type(self):
         if not self.db_url:
@@ -39,6 +43,20 @@ class Settings(BaseSettings):
             self.db_type = "postgresql"
         else:
             raise ValueError("DATABASE_URL must use mysql or postgresql")
+
+        return self
+
+    @model_validator(mode="after")
+    def format_server_id(self):
+        if self.pod_name:
+            parts = self.pod_name.split("-")
+            if len(parts) >= 2:
+                short_id = "-".join(parts[-2:])
+                self.server_id = f"{self.node_region}-{short_id}"
+            else:
+                self.server_id = f"{self.node_region}-{self.pod_name}"
+        else:
+            self.server_id = f"{self.node_region}-unknown"
 
         return self
 

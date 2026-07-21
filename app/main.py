@@ -23,9 +23,10 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_middleware(SlowAPIMiddleware)
 
-from app.middlewares.request_timer import RequestTimerMiddleware  # noqa: E402
+from app.middlewares import request_timer, request_info  # noqa: E402
 
-app.add_middleware(RequestTimerMiddleware)
+app.add_middleware(request_timer.RequestTimerMiddleware)
+app.add_middleware(request_info.RequestInfoMiddleware)
 
 from app.exception_handlers import AuthException, auth_exception_handler  # noqa: E402
 
