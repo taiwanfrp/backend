@@ -54,16 +54,16 @@ fastapi run
 
 | Method | Endpoint | Description | Required Permissions | Rate Limit |
 |--------|----------|-------------|----------------------|------------|
-| `GET` | `/status` | 健康檢查端點 (DB & Redis) | None | 10/minute, 300/hour |
-| `GET` | `/api/v1/auth/discord/login` | 回傳 Discord OAuth2 授權網址並 302 重新導向 | None | 5/hour, 20/day |
-| `GET` | `/api/v1/auth/discord/callback` | 從 Discord 回來的 code 去跟 Discord 換取資料，確認身分後 setCookie | None | 5/hour, 20/day |
-| `POST` | `/api/v1/auth/logout` | 登出並清除 session cookie | None | 5/hour, 20/day |
+| `GET` | `/status` | 健康檢查端點 (DB & Redis) | None | 30/minute, 600/hour |
+| `GET` | `/api/v1/auth/discord/login` | 回傳 Discord OAuth2 授權網址並 302 重新導向 | None | 20/hour, 80/day |
+| `GET` | `/api/v1/auth/discord/callback` | 從 Discord 回來的 code 去跟 Discord 換取資料，確認身分後 setCookie | None | 20/hour, 80/day |
+| `POST` | `/api/v1/auth/logout` | 登出並清除 session cookie | None | 20/hour, 80/day |
 | `GET`  | `/api/v1/users/me` | 回傳使用者資訊 | None | 60/minute, 1000/hour |
 | `GET`  | `/api/v1/nodes` | 回傳當前使用者身份可見的節點列表 | None | 60/minute, 1000/hour |
 | `GET`  | `/api/v1/nodes/{node_id}` | 回傳當前使用者身份可見的單一 節點資訊 | None | 60/minute, 1000/hour |
-| `POST` | `/api/v1/nodes` | 新增節點 | `node.create` | 3/hour, 5/day |
-| `PATCH` | `/api/v1/nodes/{node_id}` | 更新節點| `node.update.own` | 5/hour, 20/day |
-| `DELETE` | `/api/v1/nodes/{node_id}` | 刪除節點 | `node.delete.own` | 3/hour, 5/day |
+| `POST` | `/api/v1/nodes` | 新增節點 | `node.create` | 20/hour, 40/day |
+| `PATCH` | `/api/v1/nodes/{node_id}` | 更新節點| `node.update.own` | 20/hour, 40/day |
+| `DELETE` | `/api/v1/nodes/{node_id}` | 刪除節點 | `node.delete.own` | 20/hour, 40/day |
 
 ---
 

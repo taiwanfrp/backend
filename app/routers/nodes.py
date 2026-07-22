@@ -134,8 +134,8 @@ async def get_node(
     status_code=status.HTTP_201_CREATED,
     responses=NODE_CREATE_DOC,  # type: ignore[arg-type]
 )
-@limiter.limit("3/hour")  # type: ignore[arg-type]
-@limiter.limit("5/day")  # type: ignore[arg-type]
+@limiter.limit("20/hour")  # type: ignore[arg-type]
+@limiter.limit("40/day")  # type: ignore[arg-type]
 async def create_node(
     request: Request,
     response: Response,
@@ -178,8 +178,8 @@ async def create_node(
 
 
 @router.patch("/{node_id}", response_model=NodeResponse, responses=NODE_UPDATE_DOC)  # type: ignore[arg-type]
-@limiter.limit("5/hour")  # type: ignore[arg-type]
-@limiter.limit("30/day")  # type: ignore[arg-type]
+@limiter.limit("20/hour")  # type: ignore[arg-type]
+@limiter.limit("40/day")  # type: ignore[arg-type]
 async def update_node(
     request: Request,
     response: Response,
@@ -270,8 +270,8 @@ async def update_node(
     status_code=status.HTTP_204_NO_CONTENT,
     responses=NODE_DELETE_DOC,  # type: ignore[arg-type]
 )
-@limiter.limit("3/hour")  # type: ignore[arg-type]
-@limiter.limit("5/day")  # type: ignore[arg-type]
+@limiter.limit("20/hour")  # type: ignore[arg-type]
+@limiter.limit("40/day")  # type: ignore[arg-type]
 async def delete_node(
     request: Request,
     response: Response,

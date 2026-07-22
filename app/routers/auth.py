@@ -29,8 +29,8 @@ DISCORD_USER_URL = "https://discord.com/api/users/@me"
 
 
 @router.get("/discord/login", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-@limiter.limit("5/hour")  # type: ignore[arg-type]
-@limiter.limit("20/day")  # type: ignore[arg-type]
+@limiter.limit("20/hour")  # type: ignore[arg-type]
+@limiter.limit("80/day")  # type: ignore[arg-type]
 async def discord_login(request: Request, response: Response):
     """
     生成 Discord OAuth2 登入 URL 並重定向用戶, 同時產生並存儲 CSRF state 防止 CSRF 攻擊
@@ -66,8 +66,8 @@ async def discord_login(request: Request, response: Response):
 
 
 @router.get("/discord/callback", responses=DISCORD_CALLBACK_DOC)  # type: ignore[arg-type]
-@limiter.limit("5/hour")  # type: ignore[arg-type]
-@limiter.limit("20/day")  # type: ignore[arg-type]
+@limiter.limit("20/hour")  # type: ignore[arg-type]
+@limiter.limit("80/day")  # type: ignore[arg-type]
 async def discord_callback(
     request: Request,
     response: Response,
@@ -214,8 +214,8 @@ async def discord_callback(
 
 
 @router.get("/activate", status_code=status.HTTP_200_OK, include_in_schema=False)
-@limiter.limit("5/hour")  # type: ignore[arg-type]
-@limiter.limit("20/day")  # type: ignore[arg-type]
+@limiter.limit("20/hour")  # type: ignore[arg-type]
+@limiter.limit("80/day")  # type: ignore[arg-type]
 async def activate_account(
     request: Request,
     response: Response,
@@ -266,8 +266,8 @@ async def activate_account(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-@limiter.limit("5/hour")  # type: ignore[arg-type]
-@limiter.limit("20/day")  # type: ignore[arg-type]
+@limiter.limit("20/hour")  # type: ignore[arg-type]
+@limiter.limit("80/day")  # type: ignore[arg-type]
 async def logout(
     request: Request, response: Response, redis: Redis = Depends(get_redis)
 ):
