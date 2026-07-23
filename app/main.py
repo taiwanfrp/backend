@@ -32,10 +32,11 @@ from app.exception_handlers import AuthException, auth_exception_handler  # noqa
 
 app.add_exception_handler(AuthException, auth_exception_handler)  # type: ignore[arg-type]
 
-from app.routers import auth, users, system, nodes, tunnels  # noqa: E402
+from app.routers import auth, users, system, nodes, tunnels, permissions  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(system.router)
 app.include_router(nodes.router)
 app.include_router(tunnels.router)
+app.include_router(permissions.router)
