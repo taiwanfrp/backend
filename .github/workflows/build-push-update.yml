@@ -1,6 +1,7 @@
 name: Build, Push to GHCR, and Update Manifests
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
