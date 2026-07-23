@@ -219,7 +219,7 @@ async def create_tunnel(
         is_kcp_enabled=tunnel_data.is_kcp_enabled,
         is_proxy_protocol_v2_enabled=tunnel_data.is_proxy_protocol_v2_enabled,
         is_enabled=True,
-        status=TunnelStatus.ACTIVE,
+        status=TunnelStatus.PENDING,
     )
 
     db.add(new_tunnel)
