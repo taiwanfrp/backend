@@ -267,6 +267,7 @@ async def update_tunnel(
 
     target_node_id = update_data.get("node_id", tunnel.node_id)
     target_protocol = update_data.get("protocol", tunnel.protocol)
+    remote_port_provided = "remote_port" in update_data
     target_remote_port = update_data.get("remote_port", tunnel.remote_port)
 
     node_result = await db.execute(select(Node).where(Node.id == target_node_id))
@@ -283,7 +284,7 @@ async def update_tunnel(
 
     # 驗證 remote_port 是否位於 node 的可用範圍內
     if target_protocol in {TunnelProtocol.TCP, TunnelProtocol.UDP}:
-        if not target_remote_port:
+        if target_remote_port is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="remote_port is required for TCP and UDP protocols",
@@ -295,7 +296,7 @@ async def update_tunnel(
             )
 
     # 檢查 port 是否已經被使用
-    if target_remote_port:
+    if target_remote_port is not None:
         port_check_stmt = select(Tunnel).where(
             and_(
                 Tunnel.node_id == target_node_id,
