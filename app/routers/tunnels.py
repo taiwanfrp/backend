@@ -17,7 +17,33 @@ router = APIRouter(prefix="/api/v1/tunnels", tags=["Tunnels"])
 SUPPORTED_PROTOCOLS = {TunnelProtocol.TCP, TunnelProtocol.UDP}
 
 
-class TunnelCreateRequest(BaseModel):
+class TunnelValidationBase(BaseModel):
+    @field_validator("protocol")
+    @classmethod
+    def check_protocol_supported(cls, v: str) -> str:
+        """
+        檢查選擇的協定是否被支援
+        """
+        if v is None:
+            return v
+        if v not in SUPPORTED_PROTOCOLS:
+            raise ValueError(
+                f"Unsupported protocol: {v}. Supported protocols are: {', '.join(sorted(p.value for p in SUPPORTED_PROTOCOLS))}"
+            )
+        return v
+
+    @field_validator("local_ip")
+    @classmethod
+    def check_local_ip_valid(cls, v: str) -> str:
+        """
+        驗證 local_ip 是否為合法的 IP (包含私有 IP) 或網域
+        """
+        if v is None:
+            return v
+        return validate_host(v, allow_private=True)
+
+
+class TunnelCreateRequest(TunnelValidationBase):
     name: str = Field(..., min_length=1, max_length=50)
     description: Optional[str] = Field(None, max_length=255)
     node_id: int = Field(..., ge=1, le=2147483647)
@@ -31,28 +57,8 @@ class TunnelCreateRequest(BaseModel):
     is_kcp_enabled: bool = Field(default=True)
     is_proxy_protocol_v2_enabled: bool = Field(default=False)
 
-    @field_validator("protocol")
-    @classmethod
-    def check_protocol_supported(cls, v: str) -> str:
-        """
-        檢查選擇的協定是否被支援
-        """
-        if v not in SUPPORTED_PROTOCOLS:
-            raise ValueError(
-                f"Unsupported protocol: {v}. Supported protocols are: {', '.join(sorted(p.value for p in SUPPORTED_PROTOCOLS))}"
-            )
-        return v
 
-    @field_validator("local_ip")
-    @classmethod
-    def check_local_ip_valid(cls, v: str) -> str:
-        """
-        驗證 local_ip 是否為合法的 IP (包含私有 IP) 或網域
-        """
-        return validate_host(v, allow_private=True)
-
-
-class TunnelUpdateRequest(BaseModel):
+class TunnelUpdateRequest(TunnelValidationBase):
     name: Optional[str] = Field(None, min_length=1, max_length=50)
     description: Optional[str] = Field(None, max_length=255)
     node_id: Optional[int] = Field(None, ge=1, le=2147483647)
@@ -66,26 +72,6 @@ class TunnelUpdateRequest(BaseModel):
     is_kcp_enabled: Optional[bool] = Field(None)
     is_proxy_protocol_v2_enabled: Optional[bool] = Field(None)
     is_enabled: Optional[bool] = Field(None)
-
-    @field_validator("protocol")
-    @classmethod
-    def check_protocol_supported(cls, v: str) -> str:
-        """
-        檢查選擇的協定是否被支援
-        """
-        if v not in SUPPORTED_PROTOCOLS:
-            raise ValueError(
-                f"Unsupported protocol: {v}. Supported protocols are: {', '.join(sorted(p.value for p in SUPPORTED_PROTOCOLS))}"
-            )
-        return v
-
-    @field_validator("local_ip")
-    @classmethod
-    def check_local_ip_valid(cls, v: str) -> str:
-        """
-        驗證 local_ip 是否為合法的 IP (包含私有 IP) 或網域
-        """
-        return validate_host(v, allow_private=True)
 
 
 class TunnelResponse(BaseModel):
@@ -178,7 +164,7 @@ async def create_tunnel(
         )
 
     # 檢查 remote_port 是否位於 node 的可用範圍內
-    if tunnel_data.protocol in {TunnelProtocol.TCP, TunnelProtocol.UDP}:
+    if tunnel_data.protocol in SUPPORTED_PROTOCOLS:
         if not tunnel_data.remote_port:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -219,7 +205,7 @@ async def create_tunnel(
         is_kcp_enabled=tunnel_data.is_kcp_enabled,
         is_proxy_protocol_v2_enabled=tunnel_data.is_proxy_protocol_v2_enabled,
         is_enabled=True,
-        status=TunnelStatus.ACTIVE,
+        status=TunnelStatus.PENDING,
     )
 
     db.add(new_tunnel)
@@ -267,6 +253,7 @@ async def update_tunnel(
 
     target_node_id = update_data.get("node_id", tunnel.node_id)
     target_protocol = update_data.get("protocol", tunnel.protocol)
+    remote_port_provided = "remote_port" in update_data
     target_remote_port = update_data.get("remote_port", tunnel.remote_port)
 
     node_result = await db.execute(select(Node).where(Node.id == target_node_id))
@@ -283,7 +270,7 @@ async def update_tunnel(
 
     # 驗證 remote_port 是否位於 node 的可用範圍內
     if target_protocol in {TunnelProtocol.TCP, TunnelProtocol.UDP}:
-        if not target_remote_port:
+        if target_remote_port is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="remote_port is required for TCP and UDP protocols",
@@ -295,7 +282,7 @@ async def update_tunnel(
             )
 
     # 檢查 port 是否已經被使用
-    if target_remote_port:
+    if target_remote_port is not None:
         port_check_stmt = select(Tunnel).where(
             and_(
                 Tunnel.node_id == target_node_id,
