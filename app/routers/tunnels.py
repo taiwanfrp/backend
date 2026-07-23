@@ -178,7 +178,7 @@ async def create_tunnel(
         )
 
     # 檢查 remote_port 是否位於 node 的可用範圍內
-    if tunnel_data.protocol in {TunnelProtocol.TCP, TunnelProtocol.UDP}:
+    if tunnel_data.protocol in SUPPORTED_PROTOCOLS:
         if not tunnel_data.remote_port:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
