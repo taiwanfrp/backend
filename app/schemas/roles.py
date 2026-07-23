@@ -6,6 +6,7 @@ from app.schemas.permissions import PermissionResponse
 from app.schemas.common import ErrorResponse
 
 
+# 建立身份組
 class RoleCreateRequest(BaseModel):
     name: str = Field(..., description="身份組名稱", min_length=1, max_length=50)
     description: Optional[str] = Field(None, description="身份組描述", max_length=255)
@@ -36,4 +37,23 @@ ROLE_NOT_FOUND_DOC = {
         "description": "Role not found",
         "content": {"application/json": {"example": {"detail": "Role not found"}}},
     }
+}
+
+ROLE_CREATE_DOC = {
+    400: {
+        "model": ErrorResponse,
+        "description": "Permissions not found",
+        "content": {
+            "application/json": {"example": {"detail": "Some permissions not found"}}
+        },
+    },
+    409: {
+        "model": ErrorResponse,
+        "description": "Conflict",
+        "content": {
+            "application/json": {
+                "example": {"detail": "Role with the same name already exists"}
+            }
+        },
+    },
 }

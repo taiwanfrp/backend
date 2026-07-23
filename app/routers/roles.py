@@ -12,6 +12,7 @@ from app.limiter import limiter
 from app.schemas.roles import (
     RoleCreateRequest,
     RoleResponse,
+    ROLE_CREATE_DOC,
     ROLE_NOT_FOUND_DOC,
 )
 
@@ -66,7 +67,12 @@ async def get_role(
     return role
 
 
-@router.post("", response_model=RoleResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=RoleResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses=ROLE_CREATE_DOC,  # type: ignore[arg-type]
+)
 @limiter.limit("20/minute")  # type: ignore[arg-type]
 @limiter.limit("40/hour")  # type: ignore[arg-type]
 async def create_role(
