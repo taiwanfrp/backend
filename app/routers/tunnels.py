@@ -17,7 +17,33 @@ router = APIRouter(prefix="/api/v1/tunnels", tags=["Tunnels"])
 SUPPORTED_PROTOCOLS = {TunnelProtocol.TCP, TunnelProtocol.UDP}
 
 
-class TunnelCreateRequest(BaseModel):
+class TunnelValidationBase(BaseModel):
+    @field_validator("protocol")
+    @classmethod
+    def check_protocol_supported(cls, v: str) -> str:
+        """
+        檢查選擇的協定是否被支援
+        """
+        if v is None:
+            return v
+        if v not in SUPPORTED_PROTOCOLS:
+            raise ValueError(
+                f"Unsupported protocol: {v}. Supported protocols are: {', '.join(sorted(p.value for p in SUPPORTED_PROTOCOLS))}"
+            )
+        return v
+
+    @field_validator("local_ip")
+    @classmethod
+    def check_local_ip_valid(cls, v: str) -> str:
+        """
+        驗證 local_ip 是否為合法的 IP (包含私有 IP) 或網域
+        """
+        if v is None:
+            return v
+        return validate_host(v, allow_private=True)
+
+
+class TunnelCreateRequest(TunnelValidationBase):
     name: str = Field(..., min_length=1, max_length=50)
     description: Optional[str] = Field(None, max_length=255)
     node_id: int = Field(..., ge=1, le=2147483647)
@@ -31,28 +57,8 @@ class TunnelCreateRequest(BaseModel):
     is_kcp_enabled: bool = Field(default=True)
     is_proxy_protocol_v2_enabled: bool = Field(default=False)
 
-    @field_validator("protocol")
-    @classmethod
-    def check_protocol_supported(cls, v: str) -> str:
-        """
-        檢查選擇的協定是否被支援
-        """
-        if v not in SUPPORTED_PROTOCOLS:
-            raise ValueError(
-                f"Unsupported protocol: {v}. Supported protocols are: {', '.join(sorted(p.value for p in SUPPORTED_PROTOCOLS))}"
-            )
-        return v
 
-    @field_validator("local_ip")
-    @classmethod
-    def check_local_ip_valid(cls, v: str) -> str:
-        """
-        驗證 local_ip 是否為合法的 IP (包含私有 IP) 或網域
-        """
-        return validate_host(v, allow_private=True)
-
-
-class TunnelUpdateRequest(BaseModel):
+class TunnelUpdateRequest(TunnelValidationBase):
     name: Optional[str] = Field(None, min_length=1, max_length=50)
     description: Optional[str] = Field(None, max_length=255)
     node_id: Optional[int] = Field(None, ge=1, le=2147483647)
@@ -66,26 +72,6 @@ class TunnelUpdateRequest(BaseModel):
     is_kcp_enabled: Optional[bool] = Field(None)
     is_proxy_protocol_v2_enabled: Optional[bool] = Field(None)
     is_enabled: Optional[bool] = Field(None)
-
-    @field_validator("protocol")
-    @classmethod
-    def check_protocol_supported(cls, v: str) -> str:
-        """
-        檢查選擇的協定是否被支援
-        """
-        if v not in SUPPORTED_PROTOCOLS:
-            raise ValueError(
-                f"Unsupported protocol: {v}. Supported protocols are: {', '.join(sorted(p.value for p in SUPPORTED_PROTOCOLS))}"
-            )
-        return v
-
-    @field_validator("local_ip")
-    @classmethod
-    def check_local_ip_valid(cls, v: str) -> str:
-        """
-        驗證 local_ip 是否為合法的 IP (包含私有 IP) 或網域
-        """
-        return validate_host(v, allow_private=True)
 
 
 class TunnelResponse(BaseModel):
