@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     server_id: str = "unknown-server"
 
     site_url: str = "/"
+    cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
     @model_validator(mode="after")
     def set_db_type(self):
