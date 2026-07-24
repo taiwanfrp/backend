@@ -171,7 +171,9 @@ async def discord_callback(
 
     session_token = secrets.token_urlsafe(32)  # 生成 session token
 
-    response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    response = RedirectResponse(
+        url=settings.site_url, status_code=status.HTTP_302_FOUND
+    )
     response.set_cookie(
         key=settings.cookie_auth_name,
         value=session_token,

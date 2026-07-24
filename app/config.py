@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     pod_name: str = Field(default="", validation_alias="HOSTNAME")
     server_id: str = "unknown-server"
 
+    site_url: str = "/"
+
     @model_validator(mode="after")
     def set_db_type(self):
         if not self.db_url:
