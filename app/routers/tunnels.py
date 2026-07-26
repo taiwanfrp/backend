@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Path, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Optional
 from datetime import datetime
@@ -165,6 +165,17 @@ async def create_tunnel(
     """
     建立新的 FRP 隧道
     """
+    if current_user.limits.max_tunnels and current_user.limits.max_tunnels > 0:
+        count_stmt = select(func.count(Tunnel.id)).where(
+            Tunnel.owner_id == current_user.internal_user_id
+        )
+        current_tunnel_count = await db.scalar(count_stmt) or 0
+
+        if current_tunnel_count >= current_user.limits.max_tunnels:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You have reached your maximum tunnel limit ({current_user.limits.max_tunnels}).",
+            )
     result = await db.execute(select(Node).where(Node.id == tunnel_data.node_id))
     node = result.scalar_one_or_none()
 
