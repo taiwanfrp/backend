@@ -5,9 +5,19 @@ from app.redis_client import get_redis
 from app.config import settings
 
 # 定義一個 Pydantic 模型，用來提供 IDE 強型別支援
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Optional
 
 from app.exception_handlers import AuthException
+
+
+class UserLimits(BaseModel):
+    max_tunnels: Optional[int] = Field(
+        default=0, description="最大隧道數量限制, 0 代表無限制"
+    )
+    max_bandwidth: Optional[int] = Field(
+        default=0, description="最大頻寬限制, 0 代表無限制"
+    )
 
 
 class CurrentUser(BaseModel):
@@ -20,7 +30,13 @@ class CurrentUser(BaseModel):
     locale: str
     email: str | None
     verified: bool
-    permissions: list[str] = []
+    roles: list[str] = Field(default_factory=list, description="使用者擁有的身份組名稱")
+    permissions: list[str] = Field(
+        default_factory=list, description="使用者擁有的所有權限節點"
+    )
+    limits: UserLimits = Field(
+        default_factory=UserLimits, description="使用者擁有的資源上限"
+    )
 
 
 async def get_current_user(

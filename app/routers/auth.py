@@ -162,12 +162,40 @@ async def discord_callback(
             user_permissions = list(
                 {permission.name for permission in default_role.permissions}
             )
+            roles_list = [default_role.name]
+            tunnels_limit = default_role.max_tunnels
+            bandwidth_limit = default_role.max_bandwidth
         else:
             user_permissions = []
+            roles_list = []
+            tunnels_limit = 0
+            bandwidth_limit = 0
     else:
         user_permissions = list(
             {permission.name for role in user.roles for permission in role.permissions}
         )
+
+        roles_list = [role.name for role in user.roles]
+
+        if user.custom_max_tunnels is not None:
+            tunnels_limit = user.custom_max_tunnels
+        else:
+            tunnels_limits = [role.max_tunnels for role in user.roles]
+            tunnels_limit = (
+                0
+                if (not tunnels_limits or 0 in tunnels_limits)
+                else max(tunnels_limits)
+            )
+
+        if user.custom_max_bandwidth is not None:
+            bandwidth_limit = user.custom_max_bandwidth
+        else:
+            bandwidth_limits = [role.max_bandwidth for role in user.roles]
+            bandwidth_limit = (
+                0
+                if (not bandwidth_limits or 0 in bandwidth_limits)
+                else max(bandwidth_limits)
+            )
 
     session_token = secrets.token_urlsafe(32)  # 生成 session token
 
@@ -200,6 +228,11 @@ async def discord_callback(
         "locale": user_info.get("locale", "en-US"),
         "email": user_info.get("email"),
         "verified": user_info.get("verified", False),
+        "roles": roles_list,
+        "limits": {
+            "max_tunnels": tunnels_limit,
+            "max_bandwidth": bandwidth_limit,
+        },
     }
     await redis.set(
         f"auth:session:{session_token}",
