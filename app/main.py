@@ -1,3 +1,4 @@
+import logging
 import tomllib
 from pathlib import Path
 from fastapi import FastAPI
@@ -21,6 +22,24 @@ app = FastAPI(
     version=pyproject_data.get("version", "0.1.0"),
     description=pyproject_data.get("description", ""),
 )
+
+
+class EndpointFilter(logging.Filter):
+    """
+    過濾指定 HTTP 路徑的存取日誌 (如 /readyz, /livez)
+    """
+
+    def __init__(self, excluded_endpoints: list[str]):
+        super().__init__()
+        self.excluded_endpoints = excluded_endpoints
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        log_message = record.getMessage()
+        return not any(endpoint in log_message for endpoint in self.excluded_endpoints)
+
+
+uvicorn_logger = logging.getLogger("uvicorn.access")
+uvicorn_logger.addFilter(EndpointFilter(["/readyz", "/livez"]))
 
 app.add_middleware(
     CORSMiddleware,
