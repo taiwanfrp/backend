@@ -28,4 +28,4 @@ ENV PATH="/code/.venv/bin:$PATH"
 
 EXPOSE 8000
 
-CMD ["fastapi", "run", "--host", "::", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["fastapi", "run", "--host", "::", "--port", "8000", "--proxy-headers"]
