@@ -254,19 +254,26 @@ async def discord_callback(
 async def activate_account(
     request: Request,
     response: Response,
-    current_user: CurrentUser = Depends(GetOptionalCurrentUser(allow_suspended=True)),
+    current_user: CurrentUser | None = Depends(
+        GetOptionalCurrentUser(allow_suspended=True)
+    ),
     redis: Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db),
 ):
     """
     啟用帳號
     """
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+
     if current_user.internal_account_status == AccountStatus.ACTIVE:
-        return HTTPException(
+        raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Account is already active"
         )
     elif current_user.internal_account_status != AccountStatus.SUSPENDED:
-        return HTTPException(
+        raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Account has been {current_user.internal_account_status}",
         )
