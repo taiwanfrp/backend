@@ -11,6 +11,7 @@ on:
       - 'pyproject.toml'
       - 'uv.lock'
       - 'Dockerfile'
+      - '.pre-commit-config.yaml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -54,10 +55,7 @@ jobs:
       - name: Install Dependencies and Run Tests
         run: |
           uv sync
-          uv run ruff check
-          uv run ruff format --check .
-          uv run mypy .
-          uv run pytest
+          uv run pre-commit run --all-files
         env:
           DATABASE_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
           REDIS_URL: "redis://localhost:6379/0"

@@ -15,6 +15,7 @@ uv sync --no-dev
 或需要開發環境的套件：
 ```bash
 uv sync
+uv run pre-commit install
 ```
 
 ---
