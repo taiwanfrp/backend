@@ -90,6 +90,9 @@ class User(Base):
     tunnels: Mapped[list["Tunnel"]] = relationship(
         "Tunnel", back_populates="owner", cascade="all, delete-orphan"
     )
+    api_keys: Mapped[list["ApiKey"]] = relationship(
+        "ApiKey", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class UserAuthMethod(Base):
@@ -118,6 +121,69 @@ class UserAuthMethod(Base):
     )
 
     user: Mapped[User] = relationship("User", back_populates="auth_methods")
+
+
+# api key
+
+# api key 與 permission 多對多中介表
+api_key_permissions = Table(
+    "api_key_permissions",
+    Base.metadata,
+    Column(
+        "api_key_id",
+        String(36),
+        ForeignKey("api_keys.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "permission_id",
+        Integer,
+        ForeignKey("permissions.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=generate_uuidv7
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    # 儲存前綴, 例如 "twf_live_123456" 或 "twf_test_12345678"
+    prefix: Mapped[str] = mapped_column(
+        String(20), unique=True, index=True, nullable=False
+    )
+    # SHA-256 hex string 為 64 字元
+    hashed_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=get_utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=get_utc_now,
+        onupdate=get_utc_now,
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="api_keys")
+    permissions: Mapped[list["Permission"]] = relationship(
+        "Permission", secondary=api_key_permissions, back_populates="api_keys"
+    )
 
 
 # permission
@@ -173,6 +239,9 @@ class Permission(Base):
 
     roles: Mapped[list["Role"]] = relationship(
         "Role", secondary=role_permission, back_populates="permissions"
+    )
+    api_keys: Mapped[list["ApiKey"]] = relationship(
+        "ApiKey", secondary=api_key_permissions, back_populates="permissions"
     )
 
 
