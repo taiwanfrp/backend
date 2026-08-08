@@ -65,6 +65,10 @@ fastapi run
 | `POST` | `/api/v1/nodes` | 新增節點 | `node.create` | 20/hour, 40/day |
 | `PATCH` | `/api/v1/nodes/{node_id}` | 更新節點| `node.update.own` | 20/hour, 40/day |
 | `DELETE` | `/api/v1/nodes/{node_id}` | 刪除節點 | `node.delete.own` | 20/hour, 40/day |
+| `GET` | `/api/v1/api-keys` | 回傳當前使用者建立的 API Key 列表 | None | 180/minute, 7200/hour |
+| `GET` | `/api/v1/api-keys/{api_key_id}` | 回傳當前使用者建立的單一 API Key 資訊 | None | 180/minute, 7200/hour |
+| `POST` | `/api/v1/api-keys` | 建立新的 API Key | None | 60/hour, 180/day |
+| `DELETE` | `/api/v1/api-keys/{api_key_id}` | 刪除 API Key | None | 60/hour, 180/day |
 
 ---
 
