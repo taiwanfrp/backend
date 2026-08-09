@@ -22,8 +22,8 @@ router = APIRouter(prefix="/api/v1/roles", tags=["Roles"])
 
 
 @router.get("", response_model=list[RoleResponse])
-@limiter.limit("60/minute")  # type: ignore[arg-type]
-@limiter.limit("1000/hour")  # type: ignore[arg-type]
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
 async def get_roles(
     request: Request,
     response: Response,
@@ -41,8 +41,8 @@ async def get_roles(
 
 
 @router.get("/{role_id}", response_model=RoleResponse, responses=ROLE_NOT_FOUND_DOC)  # type: ignore[arg-type]
-@limiter.limit("60/minute")  # type: ignore[arg-type]
-@limiter.limit("1000/hour")  # type: ignore[arg-type]
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
 async def get_role(
     request: Request,
     response: Response,
@@ -75,8 +75,8 @@ async def get_role(
     status_code=status.HTTP_201_CREATED,
     responses=ROLE_CREATE_DOC,  # type: ignore[arg-type]
 )
-@limiter.limit("20/minute")  # type: ignore[arg-type]
-@limiter.limit("40/hour")  # type: ignore[arg-type]
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def create_role(
     request: Request,
     response: Response,
@@ -133,8 +133,8 @@ async def create_role(
 
 
 @router.patch("/{role_id}", response_model=RoleResponse, responses=ROLE_UPDATE_DOC)  # type: ignore[arg-type]
-@limiter.limit("20/minute")  # type: ignore[arg-type]
-@limiter.limit("40/hour")  # type: ignore[arg-type]
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def update_role(
     request: Request,
     response: Response,
@@ -223,8 +223,8 @@ async def update_role(
     status_code=status.HTTP_204_NO_CONTENT,
     responses=ROLE_NOT_FOUND_DOC,  # type: ignore[arg-type]
 )
-@limiter.limit("20/minute")  # type: ignore[arg-type]
-@limiter.limit("40/hour")  # type: ignore[arg-type]
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def delete_role(
     request: Request,
     response: Response,

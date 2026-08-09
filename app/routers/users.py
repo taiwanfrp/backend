@@ -11,8 +11,8 @@ router = APIRouter(prefix="/api/v1/users", tags=["Users"])
 
 
 @router.get("/me", response_model=CurrentUser, responses=GET_CURRENT_USER_DOC)  # type: ignore[arg-type]
-@limiter.limit("60/minute")  # type: ignore[arg-type]
-@limiter.limit("1000/hour")  # type: ignore[arg-type]
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
 async def read_current_user(
     request: Request,
     response: Response,

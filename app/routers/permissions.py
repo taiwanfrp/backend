@@ -13,8 +13,8 @@ router = APIRouter(prefix="/api/v1/permissions", tags=["Permissions"])
 
 
 @router.get("", response_model=list[PermissionResponse])
-@limiter.limit("60/minute")  # type: ignore[arg-type]
-@limiter.limit("1000/hour")  # type: ignore[arg-type]
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
 async def get_permissions(
     request: Request,
     response: Response,

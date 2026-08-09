@@ -108,8 +108,8 @@ class TunnelResponse(BaseModel):
 
 
 @router.get("", response_model=list[TunnelResponse])
-@limiter.limit("60/minute")  # type: ignore[arg-type]
-@limiter.limit("1000/hour")  # type: ignore[arg-type]
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
 async def get_tunnels(
     request: Request,
     response: Response,
@@ -126,8 +126,8 @@ async def get_tunnels(
 
 
 @router.get("/{tunnel_id}", response_model=TunnelResponse)
-@limiter.limit("60/minute")  # type: ignore[arg-type]
-@limiter.limit("1000/hour")  # type: ignore[arg-type]
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
 async def get_tunnel(
     request: Request,
     response: Response,
@@ -153,8 +153,8 @@ async def get_tunnel(
 
 
 @router.post("", response_model=TunnelResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit("5/hour")  # type: ignore[arg-type]
-@limiter.limit("10/day")  # type: ignore[arg-type]
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def create_tunnel(
     request: Request,
     response: Response,
@@ -248,8 +248,8 @@ async def create_tunnel(
 
 
 @router.patch("/{tunnel_id}", response_model=TunnelResponse)
-@limiter.limit("5/hour")  # type: ignore[arg-type]
-@limiter.limit("10/day")  # type: ignore[arg-type]
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def update_tunnel(
     request: Request,
     response: Response,
@@ -339,8 +339,8 @@ async def update_tunnel(
 
 
 @router.delete("/{tunnel_id}", status_code=status.HTTP_204_NO_CONTENT)
-@limiter.limit("5/hour")  # type: ignore[arg-type]
-@limiter.limit("10/day")  # type: ignore[arg-type]
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def delete_tunnel(
     request: Request,
     response: Response,

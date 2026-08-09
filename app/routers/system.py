@@ -66,7 +66,7 @@ async def read_item(item_id: int) -> dict[str, str | int]:
 
 
 @router.get("/status")
-@limiter.limit("30/minute")  # type: ignore[arg-type]
+@limiter.limit("60/minute")  # type: ignore[arg-type]
 @limiter.limit("600/hour")  # type: ignore[arg-type]
 async def health_check(
     request: Request,
