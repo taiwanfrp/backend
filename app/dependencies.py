@@ -1,14 +1,21 @@
 import json
 from fastapi import Depends, HTTPException, status, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from sqlalchemy import select
 from redis.asyncio import Redis
 from app.redis_client import get_redis
+from app.database import get_db
 from app.config import settings
+from datetime import datetime, timezone
+import hashlib
 
 # 定義一個 Pydantic 模型，用來提供 IDE 強型別支援
 from pydantic import BaseModel, Field
 from typing import Optional
 
 from app.exception_handlers import AuthException
+from app.models import ApiKey, User
 
 
 class UserLimits(BaseModel):
@@ -40,11 +47,89 @@ class CurrentUser(BaseModel):
 
 
 async def get_current_user(
-    request: Request, redis: Redis = Depends(get_redis)
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ) -> CurrentUser:
     """
     從 Redis 中獲取當前用戶信息的依賴函數, 用於保護需要驗證的路由
+    - Prioritizing API Key over session cookie
     """
+    # API Key
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        print(auth_header)
+        api_key = auth_header.split(" ")[1]
+
+        # 驗證 API Key 格式
+        if api_key.startswith("twf_"):
+            prefix = "_".join(api_key.split("_")[:3])
+            hashed_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+            stmt = (
+                select(ApiKey)
+                .where(ApiKey.prefix == prefix, ApiKey.hashed_key == hashed_key)
+                .options(
+                    selectinload(ApiKey.user).selectinload(User.roles),
+                    selectinload(ApiKey.permissions),
+                )
+            )
+            result = await db.execute(stmt)
+            api_key_obj = result.scalar_one_or_none()
+
+            # api key 是否存在
+            if not api_key_obj:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid API Key",
+                )
+
+            # api key 是否過期
+            if api_key_obj.expires_at and api_key_obj.expires_at < datetime.now(
+                timezone.utc
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="API Key has expired",
+                )
+
+            # 檢查所屬使用者帳號狀態
+            db_user = api_key_obj.user
+            if db_user.status != "active":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Account is {db_user.status}",
+                )
+
+            key_permissions = [
+                permission.name for permission in api_key_obj.permissions
+            ]
+
+            max_tunnels = max([r.max_tunnels for r in db_user.roles], default=0)
+            max_bandwidth = max([r.max_bandwidth for r in db_user.roles], default=0)
+
+            return CurrentUser(
+                internal_user_id=db_user.id,
+                internal_account_status=db_user.status,
+                discord_id=db_user.discord_id,
+                username=f"API_User_{db_user.discord_id}",  # 資料僅在使用者以 Discord OAuth 登入時才有
+                avatar=None,
+                mfa_enabled=False,
+                locale="en-US",
+                email=None,
+                verified=True,
+                roles=[role.name for role in db_user.roles],
+                permissions=key_permissions,
+                limits=UserLimits(max_tunnels=max_tunnels, max_bandwidth=max_bandwidth),
+            )
+
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid API Key format",
+            )
+
+    # Cookie
     session_token = request.cookies.get(settings.cookie_auth_name)
     if not session_token:
         raise HTTPException(
