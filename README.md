@@ -74,6 +74,7 @@ fastapi run
 | `POST` | `/api/v1/tunnels` | 建立新的 Tunnel | `tunnel.create` | 60/hour, 180/day |
 | `PATCH` | `/api/v1/tunnels/{tunnel_id}` | 更新 Tunnel | `tunnel.update.own` | 60/hour, 180/day |
 | `DELETE` | `/api/v1/tunnels/{tunnel_id}` | 刪除 Tunnel | `tunnel.delete.own` | 60/hour, 180/day |
+| `GET` | `/api/v1/permissions` | 回傳當前使用者的權限列表 | None | 180/minute, 7200/hour |
 
 ---
 
