@@ -2,13 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, Path, Request, Re
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 import hashlib
 
 from app.utils.api_key import generate_api_key
 from app.dependencies import get_current_user, CurrentUser
 from app.models import ApiKey, Permission
 from app.database import get_db
+from app.config import settings
 from app.limiter import limiter
 
 from app.schemas.api_keys import (
@@ -113,6 +114,19 @@ async def create_api_key(
     """
     建立新的 API Key
     """
+    # 檢查使用者是否已達到 API Key 上限
+    count_stmt = select(func.count(ApiKey.id)).where(
+        ApiKey.user_id == current_user.internal_user_id
+    )
+    count_result = await db.execute(count_stmt)
+    current_key_count = count_result.scalar_one()
+
+    if current_key_count >= settings.max_api_keys_per_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"You have reached the maximum limit of {settings.max_api_keys_per_user} API Keys",
+        )
+
     target_permissions = []
     if payload.permission_ids:
         stmt = select(Permission).where(Permission.id.in_(payload.permission_ids))

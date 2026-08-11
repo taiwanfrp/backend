@@ -54,10 +54,21 @@ API_KEY_NOT_FOUND_DOC = {
 API_KEY_CREATE_DOC = {
     400: {
         "model": ErrorResponse,
-        "description": "Invalid permission ID",
+        "description": "Bad Request",
         "content": {
             "application/json": {
-                "example": {"detail": "One or more permission IDs are invalid"}
+                "examples": {
+                    "invalid_permission_ids": {
+                        "summary": "Invalid permission IDs",
+                        "value": {"detail": "One or more permission IDs are invalid"},
+                    },
+                    "api_key_limit_exceeded": {
+                        "summary": "API Key limit exceeded",
+                        "value": {
+                            "detail": "You have reached the maximum limit of <number> API Keys"
+                        },
+                    },
+                }
             }
         },
     },

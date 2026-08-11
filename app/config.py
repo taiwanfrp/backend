@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     site_url: str = "/"
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
+    max_api_keys_per_user: int = 10
+
     @model_validator(mode="after")
     def set_db_type(self):
         if not self.db_url:
