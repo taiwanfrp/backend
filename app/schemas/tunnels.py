@@ -96,6 +96,7 @@ class TunnelResponse(BaseModel):
     is_proxy_protocol_v2_enabled: bool
     is_enabled: bool
     status: TunnelStatus
+    token_prefix: str
     created_at: datetime
     updated_at: datetime
 
