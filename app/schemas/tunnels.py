@@ -102,6 +102,12 @@ class TunnelResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TunnelCreateResponse(TunnelResponse):
+    agent_token: str = Field(
+        ..., description="用於驗證 Agent 的身份, 由後端生成, 僅顯示一次"
+    )
+
+
 TUNNEL_NOT_FOUND_DOC = {
     404: {
         "model": ErrorResponse,

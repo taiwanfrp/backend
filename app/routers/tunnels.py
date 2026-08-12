@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Path, Request, Re
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, and_, func
+import hashlib
 
+from app.utils.tokens import generate_secure_token
 from app.dependencies import CurrentUser, RequirePermissions
 from app.models import Node, NodeStatus, Tunnel, TunnelProtocol, TunnelStatus
 from app.database import get_db
@@ -10,6 +12,7 @@ from app.limiter import limiter
 
 from app.schemas.tunnels import (
     TunnelCreateRequest,
+    TunnelCreateResponse,
     TunnelUpdateRequest,
     TunnelResponse,
     TUNNEL_CREATE_DOC,
@@ -141,6 +144,10 @@ async def create_tunnel(
                 detail="remote_port is already in use on this node",
             )
 
+    raw_agent_token = generate_secure_token(token_type="tunl")
+    token_prefix = "_".join(raw_agent_token.split("_")[:3])
+    token_hashed = hashlib.sha256(raw_agent_token.encode("utf-8")).hexdigest()
+
     new_tunnel = Tunnel(
         name=tunnel_data.name,
         description=tunnel_data.description,
@@ -154,6 +161,8 @@ async def create_tunnel(
         is_proxy_protocol_v2_enabled=tunnel_data.is_proxy_protocol_v2_enabled,
         is_enabled=True,
         status=TunnelStatus.ACTIVE,
+        token_prefix=token_prefix,
+        token_hashed=token_hashed,
     )
 
     db.add(new_tunnel)
@@ -167,7 +176,8 @@ async def create_tunnel(
             detail="A tunnel with the same configuration already exists",
         )
 
-    return new_tunnel
+    tunnel_dict = TunnelResponse.model_validate(new_tunnel).model_dump()
+    return TunnelCreateResponse(**tunnel_dict, agent_token=raw_agent_token)
 
 
 @router.patch(

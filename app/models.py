@@ -399,6 +399,10 @@ class Tunnel(Base):
     status: Mapped[TunnelStatus] = mapped_column(
         Enum(TunnelStatus), nullable=False, default=TunnelStatus.ACTIVE
     )  # 僅管理員可修改
+    token_prefix: Mapped[str] = mapped_column(
+        String(20), unique=True, index=True, nullable=False
+    )
+    token_hashed: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=get_utc_now
     )

@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy import select, and_, func
 import hashlib
 
-from app.utils.api_key import generate_api_key
+from app.utils.tokens import generate_secure_token
 from app.dependencies import get_current_user, CurrentUser
 from app.models import ApiKey, Permission
 from app.database import get_db
@@ -147,7 +147,7 @@ async def create_api_key(
                 )
 
     # 生成 API Key
-    raw_api_key = generate_api_key()
+    raw_api_key = generate_secure_token(token_type="live")
 
     # 取得前綴 twf_live_12345678
     prefix = "_".join(raw_api_key.split("_")[:3])
