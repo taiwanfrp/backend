@@ -75,7 +75,7 @@ async def get_tunnel(
 
 @router.post(
     "",
-    response_model=TunnelResponse,
+    response_model=TunnelCreateResponse,
     status_code=status.HTTP_201_CREATED,
     responses=TUNNEL_CREATE_DOC,  # type: ignore[arg-type]
 )
