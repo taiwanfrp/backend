@@ -226,6 +226,21 @@ TUNNEL_UPDATE_DOC = {
     },
 }
 
+TUNNEL_REGENERATE_AGENT_TOKEN_DOC = {
+    **TUNNEL_NOT_FOUND_DOC,
+    409: {
+        "model": ErrorResponse,
+        "description": "Conflict with existing token",
+        "content": {
+            "application/json": {
+                "example": {
+                    "detail": "Failed to regenerate agent token due to a conflict"
+                }
+            }
+        },
+    },
+}
+
 TUNNEL_DELETE_DOC = {
     **TUNNEL_NOT_FOUND_DOC,
 }

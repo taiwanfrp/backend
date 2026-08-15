@@ -17,6 +17,7 @@ from app.schemas.tunnels import (
     TunnelResponse,
     TUNNEL_CREATE_DOC,
     TUNNEL_UPDATE_DOC,
+    TUNNEL_REGENERATE_AGENT_TOKEN_DOC,
     TUNNEL_DELETE_DOC,
     TUNNEL_NOT_FOUND_DOC,
 )
@@ -273,6 +274,58 @@ async def update_tunnel(
         )
 
     return tunnel
+
+
+@router.post(
+    "/{tunnel_id}/reset-token",
+    response_model=TunnelCreateResponse,
+    responses=TUNNEL_REGENERATE_AGENT_TOKEN_DOC,  # type: ignore[arg-type]
+)
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
+async def regenerate_agent_token(
+    request: Request,
+    response: Response,
+    tunnel_id: str = Path(..., min_length=36, max_length=36, description="隧道的 UUID"),
+    current_user: CurrentUser = Depends(RequirePermissions(["tunnel.update.own"])),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    重新生成指定隧道的 Agent Token
+    """
+    stmt = select(Tunnel).where(
+        and_(Tunnel.id == tunnel_id, Tunnel.owner_id == current_user.internal_user_id)
+    )
+    result = await db.execute(stmt)
+    tunnel = result.scalar_one_or_none()
+
+    if not tunnel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tunnel not found"
+        )
+
+    raw_agent_token = generate_secure_token(token_type="tunl")
+    token_prefix = "_".join(raw_agent_token.split("_")[:3])
+    token_hashed = hashlib.sha256(raw_agent_token.encode("utf-8")).hexdigest()
+
+    tunnel.token_prefix = token_prefix
+    tunnel.token_hashed = token_hashed
+
+    await db.commit()
+    await db.refresh(tunnel)
+
+    try:
+        await db.commit()
+        await db.refresh(tunnel)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Failed to regenerate agent token due to a conflict",
+        )
+
+    tunnel_dict = TunnelResponse.model_validate(tunnel).model_dump()
+    return TunnelCreateResponse(**tunnel_dict, agent_token=raw_agent_token)
 
 
 @router.delete(
