@@ -46,23 +46,15 @@ async def check_redis_connection(redis: Redis) -> str:
 
 
 @router.get("/favicon.ico", include_in_schema=False)
-async def favicon():
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
+async def favicon(request: Request, response: Response):  # type: ignore[arg-type]
     """
     重新導向到網站的 favicon.ico
     """
     return RedirectResponse(
         url="https://taiwanfrp.me/favicon.ico", status_code=status.HTTP_302_FOUND
     )
-
-
-@router.get("/")
-async def read_root() -> dict[str, str]:
-    return {"message": "Hello, World!"}
-
-
-@router.get("/items/{item_id}")
-async def read_item(item_id: int) -> dict[str, str | int]:
-    return {"item_id": item_id, "description": f"This is item {item_id}"}
 
 
 @router.get("/status")
