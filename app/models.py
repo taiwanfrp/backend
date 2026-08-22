@@ -144,6 +144,16 @@ api_key_permissions = Table(
 )
 
 
+class ApiKeyStatus(str, enum.Enum):
+    ACTIVE = "active"
+    DELETED = "deleted"
+    EXPIRED = "expired"
+    EXPOSED = "exposed"
+    REVOKED_BY_ADMIN = "revoked_admin"
+    REVOKED_BY_SYSTEM = "revoked_system"
+    REVOKED_BY_OTHER = "revoked_other"
+
+
 class ApiKey(Base):
     __tablename__ = "api_keys"
 
@@ -163,7 +173,12 @@ class ApiKey(Base):
     )
     # SHA-256 hex string 為 64 字元
     hashed_key: Mapped[str] = mapped_column(String(64), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    status: Mapped[ApiKeyStatus] = mapped_column(
+        Enum(ApiKeyStatus), nullable=False, default=ApiKeyStatus.ACTIVE, index=True
+    )
+    status_reason: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, default=None
+    )
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
