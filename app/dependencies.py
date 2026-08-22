@@ -58,7 +58,6 @@ async def get_current_user(
     # API Key
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
-        print(auth_header)
         api_key = auth_header.split(" ")[1]
 
         # 驗證 API Key 格式
