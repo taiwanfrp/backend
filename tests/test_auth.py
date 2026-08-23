@@ -56,8 +56,8 @@ def client() -> Generator[TestClient, None, None]:
     app.dependency_overrides.clear()
 
 
-def test_activate_account_requires_authentication(client: TestClient):
-    response = client.get("/api/v1/auth/activate")
+# def test_activate_account_requires_authentication(client: TestClient):
+#     response = client.get("/api/v1/auth/activate")
 
-    assert response.status_code == 401
-    assert response.json() == {"detail": "Not authenticated"}
+#     assert response.status_code == 401
+#     assert response.json() == {"detail": "Not authenticated"}

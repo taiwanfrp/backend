@@ -9,9 +9,8 @@ from sqlalchemy import select
 from redis.asyncio import Redis
 from app.redis_client import get_redis
 
-from app.dependencies import GetOptionalCurrentUser, CurrentUser
 from app.database import get_db
-from app.models import User, Role, AccountStatus
+from app.models import User, Role
 from app.config import settings
 from app.limiter import limiter
 
@@ -246,65 +245,6 @@ async def discord_callback(
     )
 
     return response
-
-
-@router.get("/activate", status_code=status.HTTP_200_OK, include_in_schema=False)
-@limiter.limit("60/hour")  # type: ignore[arg-type]
-@limiter.limit("180/day")  # type: ignore[arg-type]
-async def activate_account(
-    request: Request,
-    response: Response,
-    current_user: CurrentUser | None = Depends(
-        GetOptionalCurrentUser(allow_suspended=True)
-    ),
-    redis: Redis = Depends(get_redis),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    啟用帳號
-    """
-    if current_user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
-        )
-
-    if current_user.internal_account_status == AccountStatus.ACTIVE:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Account is already active"
-        )
-    elif current_user.internal_account_status != AccountStatus.SUSPENDED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Account has been {current_user.internal_account_status}",
-        )
-
-    # 將 db 內帳號改為 active
-    stmt = select(User).where(User.id == current_user.internal_user_id)
-    result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-
-    user.status = AccountStatus.ACTIVE
-    await db.commit()
-
-    # 更新 Redis 內的帳號狀態
-    session_token = request.cookies.get(settings.cookie_auth_name)
-    if session_token:
-        user_data_json = await redis.get(f"auth:session:{session_token}")
-        if user_data_json:
-            user_data = json.loads(user_data_json)
-            user_data["internal_account_status"] = AccountStatus.ACTIVE.value
-            await redis.set(
-                f"auth:session:{session_token}",
-                json.dumps(user_data),
-                ex=settings.cookie_auth_max_age,
-            )
-
-    current_user.internal_account_status = AccountStatus.ACTIVE.value
-    return current_user
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
