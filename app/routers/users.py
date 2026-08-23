@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from redis.asyncio import Redis
 from app.redis_client import get_redis
+import json
 
 from app.dependencies import get_current_user, CurrentUser, RequirePermissions
 from app.database import get_db
@@ -65,6 +66,31 @@ async def activate_user(
     user.status = AccountStatus.ACTIVE
     await db.commit()
 
-    # TODO: 更新 Redis 內的帳號狀態
+    session_tokens = await redis.smembers(f"auth:user_sessions:{user.id}")
 
-    return
+    for raw_token in session_tokens:
+        token = (
+            raw_token.decode("utf-8")
+            if isinstance(raw_token, bytes)
+            else str(raw_token)
+        )
+
+        session_json = await redis.get(f"auth:session:{token}")
+        if session_json:
+            user_data = json.loads(session_json)
+            user_data["internal_user_status"] = AccountStatus.ACTIVE.value
+
+            ttl = await redis.ttl(f"auth:session:{token}")
+            if ttl > 0:
+                await redis.set(
+                    f"auth:session:{token}",
+                    json.dumps(user_data),
+                    ex=ttl,
+                )
+        else:
+            await redis.srem(f"auth:user_sessions:{user.id}", token)
+
+    return {
+        "message": f"User {discord_id} activated successfully",
+        "status": AccountStatus.ACTIVE.value,
+    }

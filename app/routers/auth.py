@@ -244,6 +244,9 @@ async def discord_callback(
         ex=settings.cookie_auth_max_age,
     )
 
+    await redis.sadd(f"auth:user_sessions:{user.id}", session_token)
+    await redis.expire(f"auth:user_sessions:{user.id}", settings.cookie_auth_max_age)
+
     return response
 
 
