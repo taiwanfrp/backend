@@ -1,5 +1,6 @@
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
+
 from app.config import settings
 
 
@@ -7,8 +8,6 @@ class AuthException(HTTPException):
     """
     用於處理驗證相關異常的自定義類別
     """
-
-    pass
 
 
 async def auth_exception_handler(request: Request, exc: AuthException) -> JSONResponse:

@@ -1,21 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Path, Request, Response
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import CurrentUser, RequirePermissions
-from app.models import Role, Permission
 from app.database import get_db
+from app.dependencies import CurrentUser, RequirePermissions
 from app.limiter import limiter
-
+from app.models import Permission, Role
 from app.schemas.roles import (
-    RoleCreateRequest,
-    RoleUpdateRequest,
-    RoleResponse,
     ROLE_CREATE_DOC,
-    ROLE_UPDATE_DOC,
     ROLE_NOT_FOUND_DOC,
+    ROLE_UPDATE_DOC,
+    RoleCreateRequest,
+    RoleResponse,
+    RoleUpdateRequest,
 )
 
 router = APIRouter(prefix="/api/v1/roles", tags=["Roles"])

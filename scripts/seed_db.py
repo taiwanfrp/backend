@@ -1,6 +1,7 @@
 import asyncio
 import sys
 from pathlib import Path
+
 from sqlalchemy import select
 
 sys.path.append(str(Path(__file__).parent.parent))

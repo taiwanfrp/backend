@@ -1,6 +1,5 @@
 from app.schemas.common import ErrorResponse
 
-
 # Discord callback
 DISCORD_CALLBACK_DOC = {
     400: {

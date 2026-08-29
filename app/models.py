@@ -1,18 +1,19 @@
 import enum
-from datetime import datetime, timezone
-import uuid6
+from datetime import UTC, datetime
 
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+import uuid6
 from sqlalchemy import (
-    String,
     Boolean,
+    Column,
     DateTime,
     Enum,
     ForeignKey,
-    Column,
-    Table,
     Integer,
+    String,
+    Table,
 )
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database import Base
 
 
@@ -23,7 +24,7 @@ def generate_uuidv7() -> str:
 
 def get_utc_now() -> datetime:
     # Get the current UTC time
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class AccountStatus(str, enum.Enum):

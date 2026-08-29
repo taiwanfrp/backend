@@ -31,6 +31,10 @@ extend-exclude = [
     "**/*_pb2.py",
     "cover/",
 ]
+[tool.ruff.lint]
+ignore = ["B008"]
+[tool.ruff.lint.isort]
+combine-as-imports = true
 [tool.mypy]
 exclude = [
     "cover/"

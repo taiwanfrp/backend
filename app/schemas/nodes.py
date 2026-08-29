@@ -1,17 +1,16 @@
-from pydantic import BaseModel, Field, field_validator, ConfigDict
-from typing import Optional
 from datetime import datetime
 
-from app.models import NodeStatus
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.utils.validators import validate_host
+from app.models import NodeStatus
 from app.schemas.common import ErrorResponse
+from app.utils.validators import validate_host
 
 
 # 建立節點
 class NodeCreateRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=50)
-    description: Optional[str] = Field(None, max_length=255)
+    description: str | None = Field(None, max_length=255)
     host: str = Field(..., max_length=100)
     port_start: int = Field(..., ge=1, le=65535)
     port_end: int = Field(..., ge=1, le=65535)
@@ -28,17 +27,17 @@ class NodeCreateRequest(BaseModel):
 
 # 更新節點
 class NodeUpdateRequest(BaseModel):
-    name: Optional[str] = Field(None, min_length=2, max_length=50)
-    description: Optional[str] = Field(None, max_length=255)
-    host: Optional[str] = Field(None, max_length=100)
-    port_start: Optional[int] = Field(None, ge=1, le=65535)
-    port_end: Optional[int] = Field(None, ge=1, le=65535)
-    status: Optional[NodeStatus]
-    is_public: Optional[bool]
+    name: str | None = Field(None, min_length=2, max_length=50)
+    description: str | None = Field(None, max_length=255)
+    host: str | None = Field(None, max_length=100)
+    port_start: int | None = Field(None, ge=1, le=65535)
+    port_end: int | None = Field(None, ge=1, le=65535)
+    status: NodeStatus | None
+    is_public: bool | None
 
     @field_validator("host")
     @classmethod
-    def check_host(cls, v: str | None) -> Optional[str]:
+    def check_host(cls, v: str | None) -> str | None:
         """
         驗證 host 是否為合法的公開 IP 或網域
         """

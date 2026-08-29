@@ -1,28 +1,28 @@
-import json
-from fastapi import Depends, HTTPException, status, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-from sqlalchemy import select
-from redis.asyncio import Redis
-from app.redis_client import get_redis
-from app.database import get_db
-from app.config import settings
-from datetime import datetime, timezone
 import hashlib
+import json
+from datetime import UTC, datetime
+
+from fastapi import Depends, HTTPException, Request, status
 
 # 定義一個 Pydantic 模型，用來提供 IDE 強型別支援
 from pydantic import BaseModel, Field
-from typing import Optional
+from redis.asyncio import Redis
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.config import settings
+from app.database import get_db
 from app.exception_handlers import AuthException
-from app.models import ApiKey, ApiKeyStatus, User, Role
+from app.models import ApiKey, ApiKeyStatus, Role, User
+from app.redis_client import get_redis
 
 
 class UserLimits(BaseModel):
-    max_tunnels: Optional[int] = Field(
+    max_tunnels: int | None = Field(
         default=0, description="最大隧道數量限制, 0 代表無限制"
     )
-    max_bandwidth: Optional[int] = Field(
+    max_bandwidth: int | None = Field(
         default=0, description="最大頻寬限制, 0 代表無限制"
     )
 
@@ -92,7 +92,7 @@ async def get_current_user(
             )
 
         # api key 是否過期
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if api_key_obj.expires_at and api_key_obj.expires_at < now:
             if api_key_obj.status != ApiKeyStatus.EXPIRED:
                 api_key_obj.status = ApiKeyStatus.EXPIRED
@@ -258,7 +258,7 @@ class RequirePermissions:
         missing_permissions = self.required_permissions - user_permissions
 
         if missing_permissions:
-            missing_list = sorted(list(missing_permissions))
+            missing_list = sorted(missing_permissions)
             missing_str = ", ".join(f"'{permission}'" for permission in missing_list)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

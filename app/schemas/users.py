@@ -1,6 +1,5 @@
 from app.schemas.common import ErrorResponse
 
-
 # Get current user
 GET_CURRENT_USER_DOC = {
     401: {

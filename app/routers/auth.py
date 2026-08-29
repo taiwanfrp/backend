@@ -1,19 +1,19 @@
-import httpx2
 import json
 import secrets
+
+import httpx2
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
+from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select
-from redis.asyncio import Redis
-from app.redis_client import get_redis
 
-from app.database import get_db
-from app.models import User, Role
 from app.config import settings
+from app.database import get_db
 from app.limiter import limiter
-
+from app.models import Role, User
+from app.redis_client import get_redis
 from app.schemas.auth import (
     DISCORD_CALLBACK_DOC,
 )
@@ -267,4 +267,3 @@ async def logout(
         key=settings.cookie_auth_name,
         path=settings.cookie_path,
     )  # 刪除 session
-    return

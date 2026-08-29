@@ -1,15 +1,12 @@
 import asyncio
-from logging.config import fileConfig
-
-from sqlalchemy import pool
-from sqlalchemy.engine import Connection
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import create_async_engine
-
-from alembic import context
-
 import os
 import sys
+from logging.config import fileConfig
+
+from alembic import context
+from sqlalchemy import pool
+from sqlalchemy.engine import Connection, make_url
+from sqlalchemy.ext.asyncio import create_async_engine
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
@@ -22,7 +19,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-from app.config import settings  # noqa: E402
+from app.config import settings
 
 database_url = make_url(settings.db_url)
 
@@ -50,8 +47,8 @@ config.set_main_option("sqlalchemy.url", db_url.render_as_string(hide_password=F
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-from app.database import Base  # noqa: E402
-import app.models  # 確保模型被導入, 以便 Alembic 能夠找到 metadata    # noqa: E402, F401
+import app.models  # 確保模型被導入, 以便 Alembic 能夠找到 metadata    # noqa: F401
+from app.database import Base
 
 target_metadata = Base.metadata
 

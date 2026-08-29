@@ -1,15 +1,15 @@
-from fastapi import APIRouter, Depends, Request, Response, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from redis.asyncio import Redis
-from app.redis_client import get_redis
 import json
 
-from app.dependencies import get_current_user, CurrentUser, RequirePermissions
-from app.database import get_db
-from app.models import User, AccountStatus
-from app.limiter import limiter
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from redis.asyncio import Redis
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import get_db
+from app.dependencies import CurrentUser, RequirePermissions, get_current_user
+from app.limiter import limiter
+from app.models import AccountStatus, User
+from app.redis_client import get_redis
 from app.schemas.users import (
     GET_CURRENT_USER_DOC,
 )

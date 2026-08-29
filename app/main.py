@@ -1,15 +1,15 @@
 import logging
 import tomllib
 from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from app.config import settings
-
-from app.limiter import limiter
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+
+from app.config import settings
+from app.limiter import limiter
 
 ROOT_DIR = Path(__file__).parent.parent
 TOML_PATH = ROOT_DIR / "pyproject.toml"
@@ -53,24 +53,24 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_middleware(SlowAPIMiddleware)
 
-from app.middlewares import request_timer, request_info  # noqa: E402
+from app.middlewares import request_info, request_timer
 
 app.add_middleware(request_timer.RequestTimerMiddleware)
 app.add_middleware(request_info.RequestInfoMiddleware)
 
-from app.exception_handlers import AuthException, auth_exception_handler  # noqa: E402
+from app.exception_handlers import AuthException, auth_exception_handler
 
 app.add_exception_handler(AuthException, auth_exception_handler)  # type: ignore[arg-type]
 
-from app.routers import (  # noqa: E402
+from app.routers import (
+    api_keys,
     auth,
-    users,
-    system,
     nodes,
-    tunnels,
     permissions,
     roles,
-    api_keys,
+    system,
+    tunnels,
+    users,
 )
 
 app.include_router(auth.router)

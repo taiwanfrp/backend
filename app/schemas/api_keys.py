@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel, Field
 
 from app.schemas.common import ErrorResponse
 
@@ -10,7 +10,7 @@ class ApiKeyCreateRequest(BaseModel):
     description: str = Field(
         ..., description="API Key 的用途描述", min_length=1, max_length=255
     )
-    expires_at: Optional[datetime] = Field(
+    expires_at: datetime | None = Field(
         default=None, description="API Key 的過期時間, 若為 None 則表示不過期"
     )
     permission_ids: list[int] = Field(
@@ -23,7 +23,7 @@ class ApiKeyCreateResponse(BaseModel):
     id: str = Field(..., description="API Key 的唯一識別 ID")
     description: str = Field(..., description="API Key 的用途描述")
     api_key: str = Field(..., description="新建立的 API Key")
-    expires_at: Optional[datetime] = Field(
+    expires_at: datetime | None = Field(
         default=None, description="API Key 的過期時間, 若為 None 則表示不過期"
     )
     permission_ids: list[int] = Field(
@@ -35,7 +35,7 @@ class ApiKeyResponse(BaseModel):
     id: str = Field(..., description="API Key 的唯一識別 ID")
     description: str = Field(..., description="API Key 的用途描述")
     prefix: str = Field(..., description="API Key 的前綴, 例如 twf_live_12345678")
-    expires_at: Optional[datetime] = Field(
+    expires_at: datetime | None = Field(
         default=None, description="API Key 的過期時間, 若為 None 則表示不過期"
     )
     permission_ids: list[int] = Field(

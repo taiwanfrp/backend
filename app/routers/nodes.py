@@ -1,22 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Path, Request, Response
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import select, or_, and_
-from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_optional_current_user, CurrentUser, RequirePermissions
-from app.models import Node, NodeStatus, User
 from app.database import get_db
+from app.dependencies import CurrentUser, RequirePermissions, get_optional_current_user
 from app.limiter import limiter
-
+from app.models import Node, NodeStatus, User
 from app.schemas.nodes import (
-    NodeCreateRequest,
-    NodeUpdateRequest,
-    NodeResponse,
     NODE_CREATE_DOC,
-    NODE_UPDATE_DOC,
     NODE_DELETE_DOC,
     NODE_NOT_FOUND_DOC,
+    NODE_UPDATE_DOC,
+    NodeCreateRequest,
+    NodeResponse,
+    NodeUpdateRequest,
 )
 
 router = APIRouter(prefix="/api/v1/nodes", tags=["Nodes"])
@@ -28,7 +26,7 @@ router = APIRouter(prefix="/api/v1/nodes", tags=["Nodes"])
 async def get_nodes(
     request: Request,
     response: Response,
-    owner: Optional[str] = None,
+    owner: str | None = None,
     current_user: CurrentUser | None = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):

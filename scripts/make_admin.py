@@ -1,13 +1,14 @@
 import asyncio
 import sys
 from pathlib import Path
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 sys.path.append(str(Path(__file__).parent.parent))
 
 from app.database import AsyncSessionLocal
-from app.models import User, Role
+from app.models import Role, User
 
 
 def draw_table(uuid: str, discord_id: str, is_admin: bool):

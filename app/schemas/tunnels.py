@@ -1,27 +1,25 @@
-from pydantic import BaseModel, Field, field_validator, ConfigDict
-from typing import Optional
 from datetime import datetime
 
-from app.models import TunnelProtocol, TunnelStatus
-from app.utils.validators import validate_host
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models import TunnelProtocol, TunnelStatus
 from app.schemas.common import ErrorResponse
 from app.schemas.nodes import NODE_NOT_FOUND_DOC
-
+from app.utils.validators import validate_host
 
 SUPPORTED_PROTOCOLS = {TunnelProtocol.TCP, TunnelProtocol.UDP}
 
 
 class TunnelCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
-    description: Optional[str] = Field(None, max_length=255)
+    description: str | None = Field(None, max_length=255)
     node_id: int = Field(..., ge=1, le=2147483647)
     protocol: TunnelProtocol = Field(
         ..., description="The protocol for the tunnel (TCP or UDP)"
     )
     local_ip: str = Field(default="127.0.0.1", max_length=50)
     local_port: int = Field(..., ge=1, le=65535)
-    remote_port: Optional[int] = Field(None, ge=1, le=65535)
+    remote_port: int | None = Field(None, ge=1, le=65535)
 
     is_kcp_enabled: bool = Field(default=True)
     is_proxy_protocol_v2_enabled: bool = Field(default=False)
@@ -48,19 +46,19 @@ class TunnelCreateRequest(BaseModel):
 
 
 class TunnelUpdateRequest(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=50)
-    description: Optional[str] = Field(None, max_length=255)
-    node_id: Optional[int] = Field(None, ge=1, le=2147483647)
-    protocol: Optional[TunnelProtocol] = Field(
+    name: str | None = Field(None, min_length=1, max_length=50)
+    description: str | None = Field(None, max_length=255)
+    node_id: int | None = Field(None, ge=1, le=2147483647)
+    protocol: TunnelProtocol | None = Field(
         None, description="The protocol for the tunnel (TCP or UDP)"
     )
-    local_ip: Optional[str] = Field(None, max_length=50)
-    local_port: Optional[int] = Field(None, ge=1, le=65535)
-    remote_port: Optional[int] = Field(None, ge=1, le=65535)
+    local_ip: str | None = Field(None, max_length=50)
+    local_port: int | None = Field(None, ge=1, le=65535)
+    remote_port: int | None = Field(None, ge=1, le=65535)
 
-    is_kcp_enabled: Optional[bool] = Field(None)
-    is_proxy_protocol_v2_enabled: Optional[bool] = Field(None)
-    is_enabled: Optional[bool] = Field(None)
+    is_kcp_enabled: bool | None = Field(None)
+    is_proxy_protocol_v2_enabled: bool | None = Field(None)
+    is_enabled: bool | None = Field(None)
 
     @field_validator("protocol")
     @classmethod
@@ -86,12 +84,12 @@ class TunnelUpdateRequest(BaseModel):
 class TunnelResponse(BaseModel):
     id: str
     name: str
-    description: Optional[str]
+    description: str | None
     node_id: int
     protocol: TunnelProtocol
     local_ip: str
     local_port: int
-    remote_port: Optional[int]
+    remote_port: int | None
     is_kcp_enabled: bool
     is_proxy_protocol_v2_enabled: bool
     is_enabled: bool

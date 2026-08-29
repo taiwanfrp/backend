@@ -1,15 +1,16 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis
-import asyncio
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from redis.exceptions import RedisError
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.redis_client import get_redis
 from app.limiter import limiter
-
+from app.redis_client import get_redis
 from app.schemas.system import (
     HealthCheckResponseModel,
 )
@@ -24,9 +25,9 @@ async def check_database_connection(db: AsyncSession) -> str:
     try:
         await asyncio.wait_for(db.execute(text("SELECT 1")), timeout=2.0)
         return "up"
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return "timeout"
-    except Exception as e:
+    except (SQLAlchemyError, OSError) as e:
         print(f"Database connection error: {e}")
         return "down"
 
@@ -38,9 +39,9 @@ async def check_redis_connection(redis: Redis) -> str:
     try:
         await asyncio.wait_for(redis.ping(), timeout=2.0)
         return "up"
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return "timeout"
-    except Exception as e:
+    except (RedisError, OSError) as e:
         print(f"Redis connection error: {e}")
         return "down"
 

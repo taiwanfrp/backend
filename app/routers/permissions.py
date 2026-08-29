@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Depends, Request, Response
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, CurrentUser
-from app.models import Permission
 from app.database import get_db
+from app.dependencies import CurrentUser, get_current_user
 from app.limiter import limiter
-
+from app.models import Permission
 from app.schemas.roles import PermissionResponse
 
 router = APIRouter(prefix="/api/v1/permissions", tags=["Permissions"])
