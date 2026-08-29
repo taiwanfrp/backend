@@ -6,25 +6,25 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "alembic>=1.18.4",
-    "asyncmy>=0.2.11",
+    "alembic>=1.19.1",
+    "asyncmy>=0.2.14",
     "asyncpg>=0.31.0",
-    "fastapi[standard]>=0.138.1",
-    "httpx2>=2.5.0",
-    "pydantic-settings>=2.14.2",
-    "redis>=8.0.0",
+    "fastapi[standard]>=0.141.1",
+    "httpx2>=2.12.0",
+    "pydantic-settings>=2.15.0",
+    "redis>=8.1.0",
     "slowapi>=0.1.10",
-    "sqlalchemy>=2.0.50",
+    "sqlalchemy>=2.0.52",
     "uuid6>=2025.0.1",
-    "uvicorn>=0.48.0",
+    "uvicorn>=0.52.4",
 ]
 
 [dependency-groups]
 dev = [
-    "mypy>=2.1.0",
-    "pre-commit>=4.6.1",
-    "pytest>=9.0.3",
-    "ruff>=0.15.15",
+    "mypy>=2.3.1",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "ruff>=0.16.5",
 ]
 [tool.ruff]
 extend-exclude = [
