@@ -1,101 +1,33 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Path, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import select, and_
-from pydantic import BaseModel, Field, field_validator, ConfigDict
-from typing import Optional
-from datetime import datetime
+from sqlalchemy import select, and_, func
+import hashlib
 
-from app.utils.validators import validate_host
+from app.utils.tokens import generate_secure_token
 from app.dependencies import CurrentUser, RequirePermissions
 from app.models import Node, NodeStatus, Tunnel, TunnelProtocol, TunnelStatus
 from app.database import get_db
 from app.limiter import limiter
 
+from app.schemas.tunnels import (
+    TunnelCreateRequest,
+    TunnelCreateResponse,
+    TunnelUpdateRequest,
+    TunnelResponse,
+    TUNNEL_CREATE_DOC,
+    TUNNEL_UPDATE_DOC,
+    TUNNEL_REGENERATE_AGENT_TOKEN_DOC,
+    TUNNEL_DELETE_DOC,
+    TUNNEL_NOT_FOUND_DOC,
+)
+
 router = APIRouter(prefix="/api/v1/tunnels", tags=["Tunnels"])
-
-SUPPORTED_PROTOCOLS = {TunnelProtocol.TCP, TunnelProtocol.UDP}
-
-
-class TunnelValidationBase(BaseModel):
-    @field_validator("protocol")
-    @classmethod
-    def check_protocol_supported(cls, v: str) -> str:
-        """
-        檢查選擇的協定是否被支援
-        """
-        if v is None:
-            return v
-        if v not in SUPPORTED_PROTOCOLS:
-            raise ValueError(
-                f"Unsupported protocol: {v}. Supported protocols are: {', '.join(sorted(p.value for p in SUPPORTED_PROTOCOLS))}"
-            )
-        return v
-
-    @field_validator("local_ip")
-    @classmethod
-    def check_local_ip_valid(cls, v: str) -> str:
-        """
-        驗證 local_ip 是否為合法的 IP (包含私有 IP) 或網域
-        """
-        if v is None:
-            return v
-        return validate_host(v, allow_private=True)
-
-
-class TunnelCreateRequest(TunnelValidationBase):
-    name: str = Field(..., min_length=1, max_length=50)
-    description: Optional[str] = Field(None, max_length=255)
-    node_id: int = Field(..., ge=1, le=2147483647)
-    protocol: TunnelProtocol = Field(
-        ..., description="The protocol for the tunnel (TCP or UDP)"
-    )
-    local_ip: str = Field(default="127.0.0.1", max_length=50)
-    local_port: int = Field(..., ge=1, le=65535)
-    remote_port: Optional[int] = Field(None, ge=1, le=65535)
-
-    is_kcp_enabled: bool = Field(default=True)
-    is_proxy_protocol_v2_enabled: bool = Field(default=False)
-
-
-class TunnelUpdateRequest(TunnelValidationBase):
-    name: Optional[str] = Field(None, min_length=1, max_length=50)
-    description: Optional[str] = Field(None, max_length=255)
-    node_id: Optional[int] = Field(None, ge=1, le=2147483647)
-    protocol: Optional[TunnelProtocol] = Field(
-        None, description="The protocol for the tunnel (TCP or UDP)"
-    )
-    local_ip: Optional[str] = Field(None, max_length=50)
-    local_port: Optional[int] = Field(None, ge=1, le=65535)
-    remote_port: Optional[int] = Field(None, ge=1, le=65535)
-
-    is_kcp_enabled: Optional[bool] = Field(None)
-    is_proxy_protocol_v2_enabled: Optional[bool] = Field(None)
-    is_enabled: Optional[bool] = Field(None)
-
-
-class TunnelResponse(BaseModel):
-    id: str
-    name: str
-    description: Optional[str]
-    node_id: int
-    protocol: TunnelProtocol
-    local_ip: str
-    local_port: int
-    remote_port: Optional[int]
-    is_kcp_enabled: bool
-    is_proxy_protocol_v2_enabled: bool
-    is_enabled: bool
-    status: TunnelStatus
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 @router.get("", response_model=list[TunnelResponse])
-@limiter.limit("60/minute")  # type: ignore[arg-type]
-@limiter.limit("1000/hour")  # type: ignore[arg-type]
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
 async def get_tunnels(
     request: Request,
     response: Response,
@@ -111,9 +43,13 @@ async def get_tunnels(
     return result.scalars().all()
 
 
-@router.get("/{tunnel_id}", response_model=TunnelResponse)
-@limiter.limit("60/minute")  # type: ignore[arg-type]
-@limiter.limit("1000/hour")  # type: ignore[arg-type]
+@router.get(
+    "/{tunnel_id}",
+    response_model=TunnelResponse,
+    responses=TUNNEL_NOT_FOUND_DOC,  # type: ignore[arg-type]
+)
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
 async def get_tunnel(
     request: Request,
     response: Response,
@@ -138,9 +74,14 @@ async def get_tunnel(
     return tunnel
 
 
-@router.post("", response_model=TunnelResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit("5/hour")  # type: ignore[arg-type]
-@limiter.limit("10/day")  # type: ignore[arg-type]
+@router.post(
+    "",
+    response_model=TunnelCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses=TUNNEL_CREATE_DOC,  # type: ignore[arg-type]
+)
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def create_tunnel(
     request: Request,
     response: Response,
@@ -151,6 +92,17 @@ async def create_tunnel(
     """
     建立新的 FRP 隧道
     """
+    if current_user.limits.max_tunnels and current_user.limits.max_tunnels > 0:
+        count_stmt = select(func.count(Tunnel.id)).where(
+            Tunnel.owner_id == current_user.internal_user_id
+        )
+        current_tunnel_count = await db.scalar(count_stmt) or 0
+
+        if current_tunnel_count >= current_user.limits.max_tunnels:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You have reached your maximum tunnel limit {current_user.limits.max_tunnels}",
+            )
     result = await db.execute(select(Node).where(Node.id == tunnel_data.node_id))
     node = result.scalar_one_or_none()
 
@@ -193,6 +145,10 @@ async def create_tunnel(
                 detail="remote_port is already in use on this node",
             )
 
+    raw_agent_token = generate_secure_token(token_type="tunl")
+    token_prefix = "_".join(raw_agent_token.split("_")[:3])
+    token_hashed = hashlib.sha256(raw_agent_token.encode("utf-8")).hexdigest()
+
     new_tunnel = Tunnel(
         name=tunnel_data.name,
         description=tunnel_data.description,
@@ -205,7 +161,9 @@ async def create_tunnel(
         is_kcp_enabled=tunnel_data.is_kcp_enabled,
         is_proxy_protocol_v2_enabled=tunnel_data.is_proxy_protocol_v2_enabled,
         is_enabled=True,
-        status=TunnelStatus.PENDING,
+        status=TunnelStatus.ACTIVE,
+        token_prefix=token_prefix,
+        token_hashed=token_hashed,
     )
 
     db.add(new_tunnel)
@@ -219,12 +177,17 @@ async def create_tunnel(
             detail="A tunnel with the same configuration already exists",
         )
 
-    return new_tunnel
+    tunnel_dict = TunnelResponse.model_validate(new_tunnel).model_dump()
+    return TunnelCreateResponse(**tunnel_dict, agent_token=raw_agent_token)
 
 
-@router.patch("/{tunnel_id}", response_model=TunnelResponse)
-@limiter.limit("5/hour")  # type: ignore[arg-type]
-@limiter.limit("10/day")  # type: ignore[arg-type]
+@router.patch(
+    "/{tunnel_id}",
+    response_model=TunnelResponse,
+    responses=TUNNEL_UPDATE_DOC,  # type: ignore[arg-type]
+)
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def update_tunnel(
     request: Request,
     response: Response,
@@ -314,9 +277,65 @@ async def update_tunnel(
     return tunnel
 
 
-@router.delete("/{tunnel_id}", status_code=status.HTTP_204_NO_CONTENT)
-@limiter.limit("5/hour")  # type: ignore[arg-type]
-@limiter.limit("10/day")  # type: ignore[arg-type]
+@router.post(
+    "/{tunnel_id}/reset-token",
+    response_model=TunnelCreateResponse,
+    responses=TUNNEL_REGENERATE_AGENT_TOKEN_DOC,  # type: ignore[arg-type]
+)
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
+async def regenerate_agent_token(
+    request: Request,
+    response: Response,
+    tunnel_id: str = Path(..., min_length=36, max_length=36, description="隧道的 UUID"),
+    current_user: CurrentUser = Depends(RequirePermissions(["tunnel.update.own"])),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    重新生成指定隧道的 Agent Token
+    """
+    stmt = select(Tunnel).where(
+        and_(Tunnel.id == tunnel_id, Tunnel.owner_id == current_user.internal_user_id)
+    )
+    result = await db.execute(stmt)
+    tunnel = result.scalar_one_or_none()
+
+    if not tunnel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tunnel not found"
+        )
+
+    raw_agent_token = generate_secure_token(token_type="tunl")
+    token_prefix = "_".join(raw_agent_token.split("_")[:3])
+    token_hashed = hashlib.sha256(raw_agent_token.encode("utf-8")).hexdigest()
+
+    tunnel.token_prefix = token_prefix
+    tunnel.token_hashed = token_hashed
+
+    await db.commit()
+    await db.refresh(tunnel)
+
+    try:
+        await db.commit()
+        await db.refresh(tunnel)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Failed to regenerate agent token due to a conflict",
+        )
+
+    tunnel_dict = TunnelResponse.model_validate(tunnel).model_dump()
+    return TunnelCreateResponse(**tunnel_dict, agent_token=raw_agent_token)
+
+
+@router.delete(
+    "/{tunnel_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=TUNNEL_DELETE_DOC,  # type: ignore[arg-type]
+)
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def delete_tunnel(
     request: Request,
     response: Response,

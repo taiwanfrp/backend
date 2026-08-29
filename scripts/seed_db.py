@@ -48,6 +48,7 @@ INITIAL_PERMISSIONS = [
     {"name": "user.update.all", "description": "編輯任意使用者的資訊"},
     {"name": "user.delete.own", "description": "刪除自己的使用者帳號"},
     {"name": "user.delete.all", "description": "刪除任意使用者的帳號"},
+    {"name": "user.activate", "description": "啟用使用者的帳號"},
 ]
 
 

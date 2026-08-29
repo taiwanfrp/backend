@@ -46,7 +46,9 @@ async def check_redis_connection(redis: Redis) -> str:
 
 
 @router.get("/favicon.ico", include_in_schema=False)
-async def favicon():
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
+async def favicon(request: Request, response: Response):  # type: ignore[arg-type]
     """
     重新導向到網站的 favicon.ico
     """
@@ -55,18 +57,8 @@ async def favicon():
     )
 
 
-@router.get("/")
-async def read_root() -> dict[str, str]:
-    return {"message": "Hello, World!"}
-
-
-@router.get("/items/{item_id}")
-async def read_item(item_id: int) -> dict[str, str | int]:
-    return {"item_id": item_id, "description": f"This is item {item_id}"}
-
-
 @router.get("/status")
-@limiter.limit("30/minute")  # type: ignore[arg-type]
+@limiter.limit("60/minute")  # type: ignore[arg-type]
 @limiter.limit("600/hour")  # type: ignore[arg-type]
 async def health_check(
     request: Request,

@@ -9,9 +9,8 @@ from sqlalchemy import select
 from redis.asyncio import Redis
 from app.redis_client import get_redis
 
-from app.dependencies import GetOptionalCurrentUser, CurrentUser
 from app.database import get_db
-from app.models import User, Role, AccountStatus
+from app.models import User, Role
 from app.config import settings
 from app.limiter import limiter
 
@@ -29,8 +28,8 @@ DISCORD_USER_URL = "https://discord.com/api/users/@me"
 
 
 @router.get("/discord/login", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-@limiter.limit("20/hour")  # type: ignore[arg-type]
-@limiter.limit("80/day")  # type: ignore[arg-type]
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def discord_login(request: Request, response: Response):
     """
     生成 Discord OAuth2 登入 URL 並重定向用戶, 同時產生並存儲 CSRF state 防止 CSRF 攻擊
@@ -66,8 +65,8 @@ async def discord_login(request: Request, response: Response):
 
 
 @router.get("/discord/callback", responses=DISCORD_CALLBACK_DOC)  # type: ignore[arg-type]
-@limiter.limit("20/hour")  # type: ignore[arg-type]
-@limiter.limit("80/day")  # type: ignore[arg-type]
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def discord_callback(
     request: Request,
     response: Response,
@@ -162,16 +161,46 @@ async def discord_callback(
             user_permissions = list(
                 {permission.name for permission in default_role.permissions}
             )
+            roles_list = [default_role.name]
+            tunnels_limit = default_role.max_tunnels
+            bandwidth_limit = default_role.max_bandwidth
         else:
             user_permissions = []
+            roles_list = []
+            tunnels_limit = 0
+            bandwidth_limit = 0
     else:
         user_permissions = list(
             {permission.name for role in user.roles for permission in role.permissions}
         )
 
+        roles_list = [role.name for role in user.roles]
+
+        if user.custom_max_tunnels is not None:
+            tunnels_limit = user.custom_max_tunnels
+        else:
+            tunnels_limits = [role.max_tunnels for role in user.roles]
+            tunnels_limit = (
+                0
+                if (not tunnels_limits or 0 in tunnels_limits)
+                else max(tunnels_limits)
+            )
+
+        if user.custom_max_bandwidth is not None:
+            bandwidth_limit = user.custom_max_bandwidth
+        else:
+            bandwidth_limits = [role.max_bandwidth for role in user.roles]
+            bandwidth_limit = (
+                0
+                if (not bandwidth_limits or 0 in bandwidth_limits)
+                else max(bandwidth_limits)
+            )
+
     session_token = secrets.token_urlsafe(32)  # 生成 session token
 
-    response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    response = RedirectResponse(
+        url=settings.site_url, status_code=status.HTTP_302_FOUND
+    )
     response.set_cookie(
         key=settings.cookie_auth_name,
         value=session_token,
@@ -198,6 +227,11 @@ async def discord_callback(
         "locale": user_info.get("locale", "en-US"),
         "email": user_info.get("email"),
         "verified": user_info.get("verified", False),
+        "roles": roles_list,
+        "limits": {
+            "max_tunnels": tunnels_limit,
+            "max_bandwidth": bandwidth_limit,
+        },
     }
     await redis.set(
         f"auth:session:{session_token}",
@@ -210,64 +244,15 @@ async def discord_callback(
         ex=settings.cookie_auth_max_age,
     )
 
+    await redis.sadd(f"auth:user_sessions:{user.id}", session_token)
+    await redis.expire(f"auth:user_sessions:{user.id}", settings.cookie_auth_max_age)
+
     return response
 
 
-@router.get("/activate", status_code=status.HTTP_200_OK, include_in_schema=False)
-@limiter.limit("20/hour")  # type: ignore[arg-type]
-@limiter.limit("80/day")  # type: ignore[arg-type]
-async def activate_account(
-    request: Request,
-    response: Response,
-    current_user: CurrentUser = Depends(GetOptionalCurrentUser(allow_suspended=True)),
-    redis: Redis = Depends(get_redis),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    啟用帳號
-    """
-    if current_user.internal_account_status == AccountStatus.ACTIVE:
-        return HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Account is already active"
-        )
-    elif current_user.internal_account_status != AccountStatus.SUSPENDED:
-        return HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Account has been {current_user.internal_account_status}",
-        )
-
-    # 將 db 內帳號改為 active
-    stmt = select(User).where(User.id == current_user.internal_user_id)
-    result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-
-    user.status = AccountStatus.ACTIVE
-    await db.commit()
-
-    # 更新 Redis 內的帳號狀態
-    session_token = request.cookies.get(settings.cookie_auth_name)
-    if session_token:
-        user_data_json = await redis.get(f"auth:session:{session_token}")
-        if user_data_json:
-            user_data = json.loads(user_data_json)
-            user_data["internal_account_status"] = AccountStatus.ACTIVE.value
-            await redis.set(
-                f"auth:session:{session_token}",
-                json.dumps(user_data),
-                ex=settings.cookie_auth_max_age,
-            )
-
-    current_user.internal_account_status = AccountStatus.ACTIVE.value
-    return current_user
-
-
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-@limiter.limit("20/hour")  # type: ignore[arg-type]
-@limiter.limit("80/day")  # type: ignore[arg-type]
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def logout(
     request: Request, response: Response, redis: Redis = Depends(get_redis)
 ):

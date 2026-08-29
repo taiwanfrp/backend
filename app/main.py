@@ -1,6 +1,10 @@
+import logging
 import tomllib
 from pathlib import Path
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.config import settings
 
 from app.limiter import limiter
 from slowapi import _rate_limit_exceeded_handler
@@ -19,6 +23,32 @@ app = FastAPI(
     description=pyproject_data.get("description", ""),
 )
 
+
+class EndpointFilter(logging.Filter):
+    """
+    過濾指定 HTTP 路徑的存取日誌 (如 /readyz, /livez)
+    """
+
+    def __init__(self, excluded_endpoints: list[str]):
+        super().__init__()
+        self.excluded_endpoints = excluded_endpoints
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        log_message = record.getMessage()
+        return not any(endpoint in log_message for endpoint in self.excluded_endpoints)
+
+
+uvicorn_logger = logging.getLogger("uvicorn.access")
+uvicorn_logger.addFilter(EndpointFilter(["/readyz", "/livez"]))
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins.split(",") if settings.cors_origins else [],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_middleware(SlowAPIMiddleware)
@@ -32,7 +62,16 @@ from app.exception_handlers import AuthException, auth_exception_handler  # noqa
 
 app.add_exception_handler(AuthException, auth_exception_handler)  # type: ignore[arg-type]
 
-from app.routers import auth, users, system, nodes, tunnels, permissions, roles  # noqa: E402
+from app.routers import (  # noqa: E402
+    auth,
+    users,
+    system,
+    nodes,
+    tunnels,
+    permissions,
+    roles,
+    api_keys,
+)
 
 app.include_router(auth.router)
 app.include_router(users.router)
@@ -41,3 +80,4 @@ app.include_router(nodes.router)
 app.include_router(tunnels.router)
 app.include_router(permissions.router)
 app.include_router(roles.router)
+app.include_router(api_keys.router)

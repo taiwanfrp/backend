@@ -23,8 +23,8 @@ router = APIRouter(prefix="/api/v1/nodes", tags=["Nodes"])
 
 
 @router.get("", response_model=list[NodeResponse])
-@limiter.limit("60/minute")  # type: ignore[arg-type]
-@limiter.limit("1000/hour")  # type: ignore[arg-type]
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
 async def get_nodes(
     request: Request,
     response: Response,
@@ -78,8 +78,8 @@ async def get_nodes(
 
 
 @router.get("/{node_id}", response_model=NodeResponse, responses=NODE_NOT_FOUND_DOC)  # type: ignore[arg-type]
-@limiter.limit("60/minute")  # type: ignore[arg-type]
-@limiter.limit("1000/hour")  # type: ignore[arg-type]
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
 async def get_node(
     request: Request,
     response: Response,
@@ -134,8 +134,8 @@ async def get_node(
     status_code=status.HTTP_201_CREATED,
     responses=NODE_CREATE_DOC,  # type: ignore[arg-type]
 )
-@limiter.limit("20/hour")  # type: ignore[arg-type]
-@limiter.limit("40/day")  # type: ignore[arg-type]
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def create_node(
     request: Request,
     response: Response,
@@ -178,8 +178,8 @@ async def create_node(
 
 
 @router.patch("/{node_id}", response_model=NodeResponse, responses=NODE_UPDATE_DOC)  # type: ignore[arg-type]
-@limiter.limit("20/hour")  # type: ignore[arg-type]
-@limiter.limit("40/day")  # type: ignore[arg-type]
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def update_node(
     request: Request,
     response: Response,
@@ -270,8 +270,8 @@ async def update_node(
     status_code=status.HTTP_204_NO_CONTENT,
     responses=NODE_DELETE_DOC,  # type: ignore[arg-type]
 )
-@limiter.limit("20/hour")  # type: ignore[arg-type]
-@limiter.limit("40/day")  # type: ignore[arg-type]
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
 async def delete_node(
     request: Request,
     response: Response,
