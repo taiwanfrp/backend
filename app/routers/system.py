@@ -6,9 +6,8 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import engine
 from app.limiter import limiter
 from app.redis_client import get_redis
 from app.schemas.system import (
@@ -18,12 +17,13 @@ from app.schemas.system import (
 router = APIRouter(tags=["system"])
 
 
-async def check_database_connection(db: AsyncSession) -> str:
+async def check_database_connection() -> str:
     """
     檢查資料庫連線狀態
     """
     try:
-        await asyncio.wait_for(db.execute(text("SELECT 1")), timeout=2.0)
+        async with engine.connect() as conn:
+            await asyncio.wait_for(conn.execute(text("SELECT 1")), timeout=3.0)
         return "up"
     except TimeoutError:
         return "timeout"
@@ -64,14 +64,13 @@ async def favicon(request: Request, response: Response):  # type: ignore[arg-typ
 async def health_check(
     request: Request,
     response: Response,
-    db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ) -> HealthCheckResponseModel:
     """
     健康檢查端點，檢查資料庫和 Redis 連線狀態
     """
     db_status, redis_status = await asyncio.gather(
-        check_database_connection(db),
+        check_database_connection(),
         check_redis_connection(redis),
     )
 
@@ -94,14 +93,13 @@ async def liveness_probe():
 @router.get("/readyz", include_in_schema=False)
 async def readiness_probe(
     response: Response,
-    db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
     """
     Readiness probe endpoint for Kubernetes
     """
     db_status, redis_status = await asyncio.gather(
-        check_database_connection(db),
+        check_database_connection(),
         check_redis_connection(redis),
     )
 
