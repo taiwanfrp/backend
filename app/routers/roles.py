@@ -144,7 +144,7 @@ async def update_role(
 ):
     """
     更新身份組資訊, 需要 role.update 權限
-    - 系統預設身份組 (admin, user) 不允許改名
+    - 系統預設身份組 (admin, user, node_provider) 不允許改名
     - 如果 permissions 傳入空陣列, 則身份組不會擁有任何權限節點
     """
     stmt = (
@@ -164,7 +164,10 @@ async def update_role(
         return role
 
     if "name" in update_data:
-        if role.name in ["admin", "user"] and update_data["name"] != role.name:
+        if (
+            role.name in ["admin", "user", "node_provider"]
+            and update_data["name"] != role.name
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot update system default roles",
@@ -233,7 +236,7 @@ async def delete_role(
 ):
     """
     刪除身份組, 需要 role.delete 權限
-    - 系統預設身份組 (admin, user) 無法被刪除
+    - 系統預設身份組 (admin, user, node_provider) 無法被刪除
     """
     stmt = select(Role).where(Role.id == role_id)
     result = await db.execute(stmt)
@@ -245,7 +248,7 @@ async def delete_role(
             detail="Role not found",
         )
 
-    if role.name in ["admin", "user"]:
+    if role.name in ["admin", "user", "node_provider"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot delete system default roles",
