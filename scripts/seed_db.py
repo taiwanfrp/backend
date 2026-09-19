@@ -109,6 +109,31 @@ async def seed():
             session.add(user_role)
             print("[新增] 預設身分組: user")
 
+        # 建立節點提供者身分組 (node_provider)
+        node_provider_role_result = await session.execute(
+            select(Role).where(Role.name == "node_provider")
+        )
+        node_provider_role = node_provider_role_result.scalar_one_or_none()
+
+        if not node_provider_role:
+            node_provider_role = Role(
+                name="node_provider",
+                description="節點提供者",
+                max_tunnels=3,
+                max_bandwidth=3,
+            )
+            node_provider_perms = [
+                "node.create",
+                "node.read.own",
+                "node.update.own",
+                "node.delete.own",
+            ]
+            node_provider_role.permissions = [
+                all_perms[name] for name in node_provider_perms if name in all_perms
+            ]
+            session.add(node_provider_role)
+            print("[新增] 預設身分組: node_provider")
+
         # 建立預設管理員身分組 (admin)
         admin_role_result = await session.execute(
             select(Role).where(Role.name == "admin")
