@@ -13,6 +13,7 @@ from app.limiter import limiter
 from app.models import AccountStatus, Role, User
 from app.redis_client import get_redis
 from app.schemas.users import (
+    BECOME_NODE_PROVIDER_DOC,
     GET_CURRENT_USER_DOC,
 )
 
@@ -102,6 +103,8 @@ async def activate_user(
 
 @router.post(
     "/me/become-node-provider",
+    response_model=CurrentUser,
+    responses=BECOME_NODE_PROVIDER_DOC,  # type: ignore[arg-type]
     dependencies=[Depends(RequirePermissions(["user.update.own"]))],
 )
 @limiter.limit("10/hour")  # type: ignore[arg-type]
@@ -157,10 +160,11 @@ async def become_node_provider(
         {permission.name for role in user.roles for permission in role.permissions}
     )
 
-    permissions_json = json.dumps(user_permissions)
+    roles_list = [role.name for role in user.roles]
+
     await redis.set(
         f"auth:permissions:{user.id}",
-        permissions_json,
+        json.dumps(user_permissions),
         ex=settings.cookie_auth_max_age,
     )
 
@@ -175,7 +179,7 @@ async def become_node_provider(
         session_json = await redis.get(f"auth:session:{token}")
         if session_json:
             session_data = json.loads(session_json)
-            session_data["roles"] = [role.name for role in user.roles]
+            session_data["roles"] = roles_list
 
             ttl = await redis.ttl(f"auth:session:{token}")
             if ttl > 0:
@@ -187,8 +191,6 @@ async def become_node_provider(
         else:
             await redis.srem(f"auth:user_sessions:{user.id}", token)
 
-    return {
-        "message": "Successfully became a node provider",
-        "roles": [role.name for role in user.roles],
-        "permissions": user_permissions,
-    }
+    return current_user.model_copy(
+        update={"roles": roles_list, "permissions": user_permissions}
+    )
