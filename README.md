@@ -60,6 +60,7 @@ fastapi run
 | `GET` | `/api/v1/auth/discord/callback` | 從 Discord 回來的 code 去跟 Discord 換取資料，確認身分後 setCookie | None | 60/hour, 180/day |
 | `POST` | `/api/v1/auth/logout` | 登出並清除 session cookie | None | 60/hour, 180/day |
 | `GET`  | `/api/v1/users/me` | 回傳使用者資訊 | None | 180/minute, 7200/hour |
+| `POST` | `/api/v1/users/me/become-node-provider` | 申請成為節點提供者 | `user.update.own` | 10/hour, 30/day |
 | `GET`  | `/api/v1/nodes` | 回傳當前使用者身份可見的節點列表 | None | 180/minute, 7200/hour |
 | `GET`  | `/api/v1/nodes/{node_id}` | 回傳當前使用者身份可見的單一 節點資訊 | None | 180/minute, 7200/hour |
 | `POST` | `/api/v1/nodes` | 新增節點 | `node.create` | 60/hour, 180/day |
