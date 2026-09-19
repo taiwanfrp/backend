@@ -175,7 +175,13 @@ class ApiKey(Base):
     # SHA-256 hex string 為 64 字元
     hashed_key: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[ApiKeyStatus] = mapped_column(
-        Enum(ApiKeyStatus), nullable=False, default=ApiKeyStatus.ACTIVE, index=True
+        Enum(
+            ApiKeyStatus,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+        default=ApiKeyStatus.ACTIVE,
+        index=True,
     )
     status_reason: Mapped[str | None] = mapped_column(
         String(255), nullable=True, default=None
