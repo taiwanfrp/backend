@@ -1,0 +1,15 @@
+version: 2
+
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # 只開安全性更新, 不開一般版本更新的 PR
+    open-pull-requests-limit: 0
+    groups:
+      # 將所有安全性更新合併成一個 PR
+      uv-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
