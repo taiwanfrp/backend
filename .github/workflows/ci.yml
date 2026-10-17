@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Dependencies and Run Checks
+        run: |
+          uv sync
+          uv run pre-commit run --all-files
+        env:
+          DATABASE_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
+          REDIS_URL: "redis://localhost:6379/0"
