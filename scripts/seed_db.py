@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -43,6 +44,7 @@ INITIAL_PERMISSIONS = [
     {"name": "tunnel.delete.own", "description": "刪除自己的隧道"},
     {"name": "tunnel.delete.all", "description": "刪除任意使用者的隧道"},
     # 使用者權限
+    {"name": "user.create", "description": "建立新的使用者帳號"},
     {"name": "user.read.own", "description": "查看自己的使用者資訊"},
     {"name": "user.read.all", "description": "查看全部的使用者"},
     {"name": "user.update.own", "description": "編輯自己的使用者資訊"},
@@ -136,7 +138,9 @@ async def seed():
 
         # 建立預設管理員身分組 (admin)
         admin_role_result = await session.execute(
-            select(Role).where(Role.name == "admin")
+            select(Role)
+            .where(Role.name == "admin")
+            .options(selectinload(Role.permissions))
         )
         admin_role = admin_role_result.scalar_one_or_none()
 
@@ -151,6 +155,13 @@ async def seed():
             admin_role.permissions = list(all_perms.values())
             session.add(admin_role)
             print("[新增] 預設身分組: admin")
+        else:
+            # 補上新增的權限, 確保管理員擁有全部權限
+            owned_perm_names = {p.name for p in admin_role.permissions}
+            for name, perm in all_perms.items():
+                if name not in owned_perm_names:
+                    admin_role.permissions.append(perm)
+                    print(f"[更新] admin 身分組新增權限: {name}")
 
         await session.commit()
         print("資料庫初始化/更新完成！")
