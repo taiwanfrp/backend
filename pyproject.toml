@@ -4,7 +4,7 @@ app_name = "TaiwanFRP"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.12.*"
 dependencies = [
     "alembic>=1.19.1",
     "asyncmy>=0.2.14",
