@@ -16,6 +16,7 @@ from app.database import get_db
 from app.exception_handlers import AuthException
 from app.models import ApiKey, ApiKeyStatus, Role, User
 from app.redis_client import get_redis
+from app.utils.tokens import hash_session_token
 
 
 class UserLimits(BaseModel):
@@ -152,7 +153,9 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
         )
 
-    user_data_json = await redis.get(f"auth:session:{session_token}")
+    # Redis 只存 session token 的雜湊
+    session_key = hash_session_token(session_token)
+    user_data_json = await redis.get(f"auth:session:{session_key}")
     if not user_data_json:
         raise AuthException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -174,7 +177,7 @@ async def get_current_user(
         permissions = json.loads(permissions_json) if permissions_json else []
 
         await redis.expire(
-            f"auth:session:{session_token}", settings.cookie_auth_max_age
+            f"auth:session:{session_key}", settings.cookie_auth_max_age
         )  # 延長 session 有效期
         if permissions_json:
             await redis.expire(
@@ -206,7 +209,8 @@ class GetOptionalCurrentUser:
         if not session_token:
             return None
 
-        user_data_json = await redis.get(f"auth:session:{session_token}")
+        session_key = hash_session_token(session_token)
+        user_data_json = await redis.get(f"auth:session:{session_key}")
         if not user_data_json:
             return None
 
@@ -225,7 +229,7 @@ class GetOptionalCurrentUser:
             permissions = json.loads(permissions_json) if permissions_json else []
 
             await redis.expire(
-                f"auth:session:{session_token}", settings.cookie_auth_max_age
+                f"auth:session:{session_key}", settings.cookie_auth_max_age
             )  # 延長 session 有效期
             if permissions_json:
                 await redis.expire(

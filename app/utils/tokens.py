@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 import string
 
@@ -23,3 +24,17 @@ def generate_secure_token(token_type: str = "live") -> str:
     secure_secret = "".join(secrets.choice(BASE62_ALPHABET) for _ in range(32))
 
     return f"twf_{token_type}_{identifier}_{secure_secret}"
+
+
+def hash_session_token(session_token: str) -> str:
+    """
+    Hash a session token with SHA-256. Redis only stores the hash as the session key,
+    so a leaked Redis cannot be used to log in.
+
+    Args:
+        session_token (str): The session token stored in the cookie.
+
+    Returns:
+        str: The hex digest of the session token.
+    """
+    return hashlib.sha256(session_token.encode("utf-8")).hexdigest()

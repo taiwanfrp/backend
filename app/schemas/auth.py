@@ -1,3 +1,5 @@
+from pydantic import BaseModel, Field
+
 from app.schemas.common import ErrorResponse
 
 # Discord callback
@@ -32,4 +34,43 @@ DISCORD_CALLBACK_DOC = {
             }
         },
     }
+}
+
+
+# 客服單 bot 的授權碼
+class TicketCodeResponse(BaseModel):
+    code: str = Field(
+        ..., description="一次性授權碼, 30 秒內拿去跟客服單 bot 交換 session"
+    )
+
+
+TICKET_CODE_DOC = {
+    401: {
+        "model": ErrorResponse,
+        "description": "Not authenticated",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "not_authenticated": {
+                        "summary": "Cookie missing, session expired or account cannot be used",
+                        "value": {"detail": "Not authenticated"},
+                    },
+                }
+            }
+        },
+    },
+    403: {
+        "model": ErrorResponse,
+        "description": "Origin not allowed",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "origin_not_allowed": {
+                        "summary": "Request is not from the frontend",
+                        "value": {"detail": "Origin not allowed"},
+                    },
+                }
+            }
+        },
+    },
 }

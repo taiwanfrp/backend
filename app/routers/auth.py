@@ -11,12 +11,16 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
+from app.dependencies import CurrentUser, GetOptionalCurrentUser
 from app.limiter import limiter
 from app.models import Role, User
 from app.redis_client import get_redis
 from app.schemas.auth import (
     DISCORD_CALLBACK_DOC,
+    TICKET_CODE_DOC,
+    TicketCodeResponse,
 )
+from app.utils.tokens import hash_session_token
 
 # v1 版本的驗證路由, 包含 Discord OAuth2 登入流程和相關的 Redis 驗證碼管理
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
@@ -25,6 +29,12 @@ router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
 DISCORD_AUTH_URL = "https://discord.com/api/oauth2/authorize"
 DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
 DISCORD_USER_URL = "https://discord.com/api/users/@me"
+
+# 客服單 bot 的授權碼有效時間 (秒), 與 bot 的約定, 修改前要先通知對方
+TICKET_CODE_MAX_AGE = 30
+
+# 停權中的帳號也可以開客服單 (例如申請啟用帳號)
+get_ticket_user = GetOptionalCurrentUser(allow_suspended=True)
 
 
 @router.get("/discord/login", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
@@ -197,6 +207,8 @@ async def discord_callback(
             )
 
     session_token = secrets.token_urlsafe(32)  # 生成 session token
+    # Redis 只存 session token 的雜湊, 外洩時拿不到能用的 cookie
+    session_key = hash_session_token(session_token)
 
     response = RedirectResponse(
         url=settings.site_url, status_code=status.HTTP_302_FOUND
@@ -234,7 +246,7 @@ async def discord_callback(
         },
     }
     await redis.set(
-        f"auth:session:{session_token}",
+        f"auth:session:{session_key}",
         json.dumps(session_data),
         ex=settings.cookie_auth_max_age,
     )
@@ -244,7 +256,7 @@ async def discord_callback(
         ex=settings.cookie_auth_max_age,
     )
 
-    await redis.sadd(f"auth:user_sessions:{user.id}", session_token)
+    await redis.sadd(f"auth:user_sessions:{user.id}", session_key)
     await redis.expire(f"auth:user_sessions:{user.id}", settings.cookie_auth_max_age)
 
     return response
@@ -261,9 +273,51 @@ async def logout(
     """
     session_token = request.cookies.get(settings.cookie_auth_name)
     if session_token:
-        await redis.delete(f"auth:session:{session_token}")
+        await redis.delete(f"auth:session:{hash_session_token(session_token)}")
 
     response.delete_cookie(
         key=settings.cookie_auth_name,
         path=settings.cookie_path,
     )  # 刪除 session
+
+
+@router.post(
+    "/ticket-code",
+    response_model=TicketCodeResponse,
+    responses=TICKET_CODE_DOC,  # type: ignore[arg-type]
+)
+@limiter.limit("60/minute")  # type: ignore[arg-type]
+@limiter.limit("600/hour")  # type: ignore[arg-type]
+async def create_ticket_code(
+    request: Request,
+    response: Response,
+    current_user: CurrentUser | None = Depends(get_ticket_user),
+    redis: Redis = Depends(get_redis),
+):
+    """
+    產生客服單 bot 的一次性授權碼, 前端拿去跟 bot 交換 bot 自己的 session cookie
+    - 只接受 session cookie, 不接受 API Key
+    - 授權碼只存 session token 的雜湊, bot 不會拿到能登入的 session
+    - 只能使用一次 (bot 用 GETDEL 取出), 30 秒後過期
+    """
+    # 只允許前端呼叫, 避免其他網站在背景取得授權碼
+    origin = request.headers.get("origin")
+    if origin not in settings.cors_origins.split(","):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Origin not allowed"
+        )
+
+    session_token = request.cookies.get(settings.cookie_auth_name)
+    if not current_user or not session_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+
+    code = secrets.token_urlsafe(32)
+    await redis.set(
+        f"auth:ticket_code:{code}",
+        hash_session_token(session_token),
+        ex=TICKET_CODE_MAX_AGE,
+    )
+
+    return TicketCodeResponse(code=code)
