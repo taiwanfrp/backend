@@ -1,14 +1,14 @@
 import hashlib
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import CurrentUser, RequirePermissions
 from app.limiter import limiter
-from app.models import Node, NodeStatus, Tunnel, TunnelProtocol, TunnelStatus
+from app.models import Node, NodeStatus, Tunnel, TunnelProtocol, TunnelStatus, User
 from app.schemas.tunnels import (
     SUPPORTED_PROTOCOLS,
     TUNNEL_CREATE_DOC,
@@ -24,6 +24,34 @@ from app.schemas.tunnels import (
 from app.utils.tokens import generate_secure_token
 
 router = APIRouter(prefix="/api/v1/tunnels", tags=["Tunnels"])
+
+
+async def get_usable_node(
+    db: AsyncSession, node_id: int, current_user: CurrentUser
+) -> Node:
+    """
+    取得使用者可以建立隧道的節點, 與節點列表的可見性一致
+    - 私有節點只有擁有者, 受邀使用者與管理員可以使用
+    - 無權使用時回傳與節點不存在相同的 404, 避免洩漏私有節點
+    """
+    stmt = select(Node).where(Node.id == node_id)
+    if "node.read.all" not in current_user.permissions:
+        stmt = stmt.where(
+            or_(
+                Node.is_public.is_(True),
+                Node.owner_id == current_user.internal_user_id,
+                Node.allowed_users.any(User.id == current_user.internal_user_id),
+            )
+        )
+
+    result = await db.execute(stmt)
+    node = result.scalar_one_or_none()
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Node not found"
+        )
+
+    return node
 
 
 @router.get("", response_model=list[TunnelResponse])
@@ -104,13 +132,7 @@ async def create_tunnel(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"You have reached your maximum tunnel limit {current_user.limits.max_tunnels}",
             )
-    result = await db.execute(select(Node).where(Node.id == tunnel_data.node_id))
-    node = result.scalar_one_or_none()
-
-    if not node:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Node not found"
-        )
+    node = await get_usable_node(db, tunnel_data.node_id, current_user)
     if node.status != NodeStatus.ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Node is not available"
@@ -219,13 +241,7 @@ async def update_tunnel(
     target_protocol = update_data.get("protocol", tunnel.protocol)
     target_remote_port = update_data.get("remote_port", tunnel.remote_port)
 
-    node_result = await db.execute(select(Node).where(Node.id == target_node_id))
-    node = node_result.scalar_one_or_none()
-
-    if not node:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Node not found"
-        )
+    node = await get_usable_node(db, target_node_id, current_user)
     if node.status != NodeStatus.ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Node is not available"

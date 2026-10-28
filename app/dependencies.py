@@ -16,6 +16,7 @@ from app.database import get_db
 from app.exception_handlers import AuthException
 from app.models import ApiKey, ApiKeyStatus, Role, User
 from app.redis_client import get_redis
+from app.utils.sessions import calculate_limit
 from app.utils.tokens import hash_session_token
 
 
@@ -128,8 +129,13 @@ async def get_current_user(
         api_key_obj.last_used_at = now
         await db.commit()
 
-        max_tunnels = max([r.max_tunnels for r in db_user.roles], default=0)
-        max_bandwidth = max([r.max_bandwidth for r in db_user.roles], default=0)
+        # 與 cookie session 使用相同規則, 自訂上限優先 (0 表示無限制)
+        max_tunnels = calculate_limit(
+            db_user.custom_max_tunnels, [r.max_tunnels for r in db_user.roles]
+        )
+        max_bandwidth = calculate_limit(
+            db_user.custom_max_bandwidth, [r.max_bandwidth for r in db_user.roles]
+        )
 
         return CurrentUser(
             internal_user_id=db_user.id,
@@ -179,6 +185,9 @@ async def get_current_user(
         await redis.expire(
             f"auth:session:{session_key}", settings.cookie_auth_max_age
         )  # 延長 session 有效期
+        await redis.expire(
+            f"auth:user_sessions:{internal_user_id}", settings.cookie_auth_max_age
+        )  # 索引需與 session 一起續期, 否則停權/刪除時找不到 session
         if permissions_json:
             await redis.expire(
                 f"auth:permissions:{internal_user_id}", settings.cookie_auth_max_age
@@ -231,6 +240,10 @@ class GetOptionalCurrentUser:
             await redis.expire(
                 f"auth:session:{session_key}", settings.cookie_auth_max_age
             )  # 延長 session 有效期
+            await redis.expire(
+                f"auth:user_sessions:{internal_user_id}",
+                settings.cookie_auth_max_age,
+            )  # 索引需與 session 一起續期, 否則停權/刪除時找不到 session
             if permissions_json:
                 await redis.expire(
                     f"auth:permissions:{internal_user_id}", settings.cookie_auth_max_age

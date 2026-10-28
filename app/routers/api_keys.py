@@ -23,13 +23,30 @@ from app.utils.tokens import generate_secure_token
 router = APIRouter(prefix="/api/v1/api-keys", tags=["API-Keys"])
 
 
+async def get_session_user(
+    request: Request, current_user: CurrentUser = Depends(get_current_user)
+) -> CurrentUser:
+    """
+    API Key 的管理只接受 session cookie, 不接受 API Key
+    - 避免 API Key 自行產生不會過期的新 Key, 繞過原 Key 的到期與撤銷
+    - get_current_user 會優先使用 Bearer API Key, 有帶就代表是用 API Key 驗證
+    """
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API Key management requires a session, not an API Key",
+        )
+    return current_user
+
+
 @router.get("", response_model=list[ApiKeyResponse])
 @limiter.limit("180/minute")  # type: ignore[arg-type]
 @limiter.limit("7200/hour")  # type: ignore[arg-type]
 async def get_api_keys(
     request: Request,
     response: Response,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_session_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -64,7 +81,7 @@ async def get_api_key(
     api_key_id: str = Path(
         ..., min_length=36, max_length=36, description="API Key 的 UUID"
     ),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_session_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -108,7 +125,7 @@ async def create_api_key(
     request: Request,
     response: Response,
     payload: ApiKeyCreateRequest,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_session_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -195,7 +212,7 @@ async def delete_api_key(
     api_key_id: str = Path(
         ..., min_length=36, max_length=36, description="API Key 的 UUID"
     ),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_session_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
