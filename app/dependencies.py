@@ -48,158 +48,173 @@ class CurrentUser(BaseModel):
     )
 
 
-async def get_current_user(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    redis: Redis = Depends(get_redis),
-) -> CurrentUser:
-    """
-    從 Redis 中獲取當前用戶信息的依賴函數, 用於保護需要驗證的路由
-    - Prioritizing API Key over session cookie
-    """
-    # API Key
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Bearer "):
-        api_key = auth_header.split(" ")[1]
+class GetCurrentUser:
+    def __init__(self, allow_suspended: bool = False):
+        self.allow_suspended = allow_suspended
 
-        # 驗證 API Key 格式
-        parts = api_key.split("_")
-        if not api_key.startswith("twf_") or len(parts) < 3:
+    async def __call__(
+        self,
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+        redis: Redis = Depends(get_redis),
+    ) -> CurrentUser:
+        """
+        從 Redis 中獲取當前用戶信息的依賴函數, 用於保護需要驗證的路由
+        - Prioritizing API Key over session cookie
+        - allow_suspended 為 True 時, 尚未啟用 (suspended) 的帳號也可以通過
+        """
+        allowed_statuses = (
+            ["active", "suspended"] if self.allow_suspended else ["active"]
+        )
+
+        # API Key
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            api_key = auth_header.split(" ")[1]
+
+            # 驗證 API Key 格式
+            parts = api_key.split("_")
+            if not api_key.startswith("twf_") or len(parts) < 3:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid API Key format",
+                )
+
+            prefix = "_".join(api_key.split("_")[:3])
+            hashed_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+            stmt = (
+                select(ApiKey)
+                .where(ApiKey.prefix == prefix, ApiKey.hashed_key == hashed_key)
+                .options(
+                    selectinload(ApiKey.user)
+                    .selectinload(User.roles)
+                    .selectinload(Role.permissions),
+                    selectinload(ApiKey.permissions),
+                )
+            )
+            result = await db.execute(stmt)
+            api_key_obj = result.scalar_one_or_none()
+
+            # api key 是否存在
+            if not api_key_obj:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid API Key",
+                )
+
+            # api key 是否過期
+            now = datetime.now(UTC)
+            if api_key_obj.expires_at and api_key_obj.expires_at < now:
+                if api_key_obj.status != ApiKeyStatus.EXPIRED:
+                    api_key_obj.status = ApiKeyStatus.EXPIRED
+                    await db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="API Key has expired",
+                )
+
+            if api_key_obj.status != ApiKeyStatus.ACTIVE:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"API Key is {api_key_obj.status.value}, Reason: {api_key_obj.status_reason or 'No reason provided'}",
+                )
+
+            # 檢查所屬使用者帳號狀態
+            db_user = api_key_obj.user
+            if db_user.status not in allowed_statuses:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Account is {db_user.status}",
+                )
+
+            key_permissions = {
+                permission.name for permission in api_key_obj.permissions
+            }
+            user_actual_permissions = {
+                permission.name
+                for role in db_user.roles
+                for permission in getattr(role, "permissions", [])
+            }
+            effective_permissions = list(key_permissions & user_actual_permissions)
+
+            api_key_obj.last_used_at = now
+            await db.commit()
+
+            # 與 cookie session 使用相同規則, 自訂上限優先 (0 表示無限制)
+            max_tunnels = calculate_limit(
+                db_user.custom_max_tunnels, [r.max_tunnels for r in db_user.roles]
+            )
+            max_bandwidth = calculate_limit(
+                db_user.custom_max_bandwidth, [r.max_bandwidth for r in db_user.roles]
+            )
+
+            return CurrentUser(
+                internal_user_id=db_user.id,
+                internal_account_status=db_user.status,
+                discord_id=db_user.discord_id,
+                username=f"API_User_{db_user.discord_id}",  # 資料僅在使用者以 Discord OAuth 登入時才有
+                avatar=None,
+                mfa_enabled=False,
+                locale="en-US",
+                email=None,
+                verified=True,
+                roles=[role.name for role in db_user.roles],
+                permissions=effective_permissions,
+                limits=UserLimits(max_tunnels=max_tunnels, max_bandwidth=max_bandwidth),
+            )
+
+        # Cookie
+        session_token = request.cookies.get(settings.cookie_auth_name)
+        if not session_token:
             raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+            )
+
+        # Redis 只存 session token 的雜湊
+        session_key = hash_session_token(session_token)
+        user_data_json = await redis.get(f"auth:session:{session_key}")
+        if not user_data_json:
+            raise AuthException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid API Key format",
-            )
+                detail="Session expired or invalid",
+            )  # 刪除無效 session cookie
 
-        prefix = "_".join(api_key.split("_")[:3])
-        hashed_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+        try:
+            user_data = json.loads(user_data_json)
 
-        stmt = (
-            select(ApiKey)
-            .where(ApiKey.prefix == prefix, ApiKey.hashed_key == hashed_key)
-            .options(
-                selectinload(ApiKey.user)
-                .selectinload(User.roles)
-                .selectinload(Role.permissions),
-                selectinload(ApiKey.permissions),
-            )
-        )
-        result = await db.execute(stmt)
-        api_key_obj = result.scalar_one_or_none()
+            if user_data.get("internal_account_status") not in allowed_statuses:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Account is {user_data.get('internal_account_status')}",
+                )
 
-        # api key 是否存在
-        if not api_key_obj:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid API Key",
-            )
+            internal_user_id = user_data["internal_user_id"]
 
-        # api key 是否過期
-        now = datetime.now(UTC)
-        if api_key_obj.expires_at and api_key_obj.expires_at < now:
-            if api_key_obj.status != ApiKeyStatus.EXPIRED:
-                api_key_obj.status = ApiKeyStatus.EXPIRED
-                await db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="API Key has expired",
-            )
+            permissions_json = await redis.get(f"auth:permissions:{internal_user_id}")
+            permissions = json.loads(permissions_json) if permissions_json else []
 
-        if api_key_obj.status != ApiKeyStatus.ACTIVE:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"API Key is {api_key_obj.status.value}, Reason: {api_key_obj.status_reason or 'No reason provided'}",
-            )
-
-        # 檢查所屬使用者帳號狀態
-        db_user = api_key_obj.user
-        if db_user.status != "active":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Account is {db_user.status}",
-            )
-
-        key_permissions = {permission.name for permission in api_key_obj.permissions}
-        user_actual_permissions = {
-            permission.name
-            for role in db_user.roles
-            for permission in getattr(role, "permissions", [])
-        }
-        effective_permissions = list(key_permissions & user_actual_permissions)
-
-        api_key_obj.last_used_at = now
-        await db.commit()
-
-        # 與 cookie session 使用相同規則, 自訂上限優先 (0 表示無限制)
-        max_tunnels = calculate_limit(
-            db_user.custom_max_tunnels, [r.max_tunnels for r in db_user.roles]
-        )
-        max_bandwidth = calculate_limit(
-            db_user.custom_max_bandwidth, [r.max_bandwidth for r in db_user.roles]
-        )
-
-        return CurrentUser(
-            internal_user_id=db_user.id,
-            internal_account_status=db_user.status,
-            discord_id=db_user.discord_id,
-            username=f"API_User_{db_user.discord_id}",  # 資料僅在使用者以 Discord OAuth 登入時才有
-            avatar=None,
-            mfa_enabled=False,
-            locale="en-US",
-            email=None,
-            verified=True,
-            roles=[role.name for role in db_user.roles],
-            permissions=effective_permissions,
-            limits=UserLimits(max_tunnels=max_tunnels, max_bandwidth=max_bandwidth),
-        )
-
-    # Cookie
-    session_token = request.cookies.get(settings.cookie_auth_name)
-    if not session_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
-        )
-
-    # Redis 只存 session token 的雜湊
-    session_key = hash_session_token(session_token)
-    user_data_json = await redis.get(f"auth:session:{session_key}")
-    if not user_data_json:
-        raise AuthException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session expired or invalid",
-        )  # 刪除無效 session cookie
-
-    try:
-        user_data = json.loads(user_data_json)
-
-        if user_data.get("internal_account_status") not in ["active"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Account is {user_data.get('internal_account_status')}",
-            )
-
-        internal_user_id = user_data["internal_user_id"]
-
-        permissions_json = await redis.get(f"auth:permissions:{internal_user_id}")
-        permissions = json.loads(permissions_json) if permissions_json else []
-
-        await redis.expire(
-            f"auth:session:{session_key}", settings.cookie_auth_max_age
-        )  # 延長 session 有效期
-        await redis.expire(
-            f"auth:user_sessions:{internal_user_id}", settings.cookie_auth_max_age
-        )  # 索引需與 session 一起續期, 否則停權/刪除時找不到 session
-        if permissions_json:
             await redis.expire(
-                f"auth:permissions:{internal_user_id}", settings.cookie_auth_max_age
-            )  # 延長 permissions 有效期
+                f"auth:session:{session_key}", settings.cookie_auth_max_age
+            )  # 延長 session 有效期
+            await redis.expire(
+                f"auth:user_sessions:{internal_user_id}", settings.cookie_auth_max_age
+            )  # 索引需與 session 一起續期, 否則停權/刪除時找不到 session
+            if permissions_json:
+                await redis.expire(
+                    f"auth:permissions:{internal_user_id}", settings.cookie_auth_max_age
+                )  # 延長 permissions 有效期
 
-        user_data["permissions"] = permissions
-        return CurrentUser(**user_data)
-    except (json.JSONDecodeError, KeyError) as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Invalid session data",
-        ) from e
+            user_data["permissions"] = permissions
+            return CurrentUser(**user_data)
+        except (json.JSONDecodeError, KeyError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Invalid session data",
+            ) from e
+
+
+get_current_user = GetCurrentUser(allow_suspended=False)
 
 
 class GetOptionalCurrentUser:

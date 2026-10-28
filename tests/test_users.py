@@ -9,6 +9,7 @@ from app.dependencies import CurrentUser, get_current_user
 from app.main import app
 from app.models import AccountStatus, Permission, Role, User
 from app.redis_client import get_redis
+from app.routers.users import get_me_user
 
 ADMIN_DISCORD_ID = "100000000000000001"
 TARGET_DISCORD_ID = "100000000000000002"
@@ -159,6 +160,7 @@ def setup_client():
         app.dependency_overrides[get_db] = override_get_db
         app.dependency_overrides[get_redis] = override_get_redis
         app.dependency_overrides[get_current_user] = lambda: current_user
+        app.dependency_overrides[get_me_user] = lambda: current_user
         return TestClient(app), db, fake_redis
 
     yield _setup
@@ -408,6 +410,27 @@ def test_update_user_not_found(setup_client):
     )
 
     assert response.status_code == 404
+
+
+# 啟用帳號
+
+
+def test_activate_user_updates_sessions(setup_client):
+    user = make_user()
+    redis = FakeRedis(sessions={"target-id": {"token-a"}})
+    redis.store["auth:session:token-a"] = json.dumps(
+        {"internal_account_status": "suspended"}
+    )
+    client, db, redis = setup_client([user], ["user.activate"], redis=redis)
+
+    response = client.post(f"/api/v1/users/{TARGET_DISCORD_ID}/activate")
+
+    assert response.status_code == 200
+    assert user.status == AccountStatus.ACTIVE
+    assert db.committed
+    # 已經登入的 session 也要更新, 不用重新登入
+    session = json.loads(redis.store["auth:session:token-a"])
+    assert session["internal_account_status"] == "active"
 
 
 # 刪除使用者

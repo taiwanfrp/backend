@@ -185,10 +185,6 @@ GET_CURRENT_USER_DOC = {
         "content": {
             "application/json": {
                 "examples": {
-                    "account_suspended": {
-                        "summary": "Account not active",
-                        "value": {"detail": "Account is suspended"},
-                    },
                     "account_deleted": {
                         "summary": "Account has been deleted",
                         "value": {"detail": "Account is deleted"},

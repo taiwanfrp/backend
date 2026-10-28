@@ -149,6 +149,30 @@ def test_session_is_stored_by_hash(session_client: TestClient, fake_redis: FakeR
     assert response.json()["discord_id"] == "100000000000000001"
 
 
+def test_me_allows_suspended_account(session_client: TestClient, fake_redis: FakeRedis):
+    login(session_client, fake_redis, status="suspended")
+    response = session_client.get("/api/v1/users/me")
+
+    assert response.status_code == 200
+    assert response.json()["internal_account_status"] == "suspended"
+
+    # 其他 API 仍然只接受啟用中的帳號
+    response = session_client.get("/api/v1/permissions")
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Account is suspended"}
+
+
+@pytest.mark.parametrize("status", ["banned", "deleted"])
+def test_me_rejects_unusable_account(
+    session_client: TestClient, fake_redis: FakeRedis, status: str
+):
+    login(session_client, fake_redis, status=status)
+    response = session_client.get("/api/v1/users/me")
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": f"Account is {status}"}
+
+
 def test_logout_deletes_hashed_session(
     session_client: TestClient, fake_redis: FakeRedis
 ):

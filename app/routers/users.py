@@ -9,7 +9,12 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import CurrentUser, RequirePermissions, get_current_user
+from app.dependencies import (
+    CurrentUser,
+    GetCurrentUser,
+    RequirePermissions,
+    get_current_user,
+)
 from app.limiter import limiter
 from app.models import AccountStatus, Role, User
 from app.redis_client import get_redis
@@ -30,6 +35,9 @@ NODE_PROVIDER_ROLE_NAME = "node_provider"
 DEFAULT_ROLE_NAME = "user"
 
 router = APIRouter(prefix="/api/v1/users", tags=["Users"])
+
+# 尚未啟用的帳號也要能取得自己的資料, 前端依照 internal_account_status 顯示
+get_me_user = GetCurrentUser(allow_suspended=True)
 
 
 def require_role_assign(current_user: CurrentUser):
@@ -73,10 +81,11 @@ async def load_roles(db: AsyncSession, role_ids: list[int]) -> list[Role]:
 async def read_current_user(
     request: Request,
     response: Response,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_me_user),
 ):
     """
     獲取當前用戶信息的路由, 需要驗證
+    - 尚未啟用 (suspended) 的帳號也可以取得, 其他 API 仍然只接受啟用中的帳號
     """
     return current_user
 
@@ -183,7 +192,7 @@ async def activate_user(
         session_json = await redis.get(f"auth:session:{token}")
         if session_json:
             user_data = json.loads(session_json)
-            user_data["internal_user_status"] = AccountStatus.ACTIVE.value
+            user_data["internal_account_status"] = AccountStatus.ACTIVE.value
 
             ttl = await redis.ttl(f"auth:session:{token}")
             if ttl > 0:
