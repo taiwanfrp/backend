@@ -89,8 +89,8 @@ jobs:
       - name: Update Deployment Image Tag
         run: |
           OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          sed -i "s|image: ghcr.io/${OWNER_LC}/backend:.*|image: ghcr.io/${OWNER_LC}/backend:${{ steps.meta.outputs.TAG }}|g" gitops/deployment.yaml
-          sed -i "s|image: ghcr.io/${OWNER_LC}/backend:.*|image: ghcr.io/${OWNER_LC}/backend:${{ steps.meta.outputs.TAG }}|g" gitops/docker-compose.yml
+          sed -i "s|image: ghcr.io/${OWNER_LC}/backend:.*|image: ghcr.io/${OWNER_LC}/backend:${{ steps.meta.outputs.TAG }}|g" gitops/backend/deployment.yaml
+          sed -i "s|image: ghcr.io/${OWNER_LC}/backend:.*|image: ghcr.io/${OWNER_LC}/backend:${{ steps.meta.outputs.TAG }}|g" gitops/backend/docker-compose.yml
 
       - name: Import GPG Key
         uses: crazy-max/ghaction-import-gpg@v6
