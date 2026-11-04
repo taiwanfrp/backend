@@ -330,11 +330,14 @@ def test_delete_sessions_rejects_api_key(session_client: TestClient):
     assert response.status_code == 401
 
 
+DEVICE_IP = "1.1.1.1"
+
+
 def add_device(
     redis: FakeRedis, token: str, session_id: str | None, created_at: str | None
 ) -> str:
     key = hash_session_token(token)
-    extra = {"ip": "1.1.1.1", "user_agent": "Firefox"}
+    extra = {"ip": DEVICE_IP, "user_agent": "Firefox"}
     if session_id:
         extra |= {"session_id": session_id, "created_at": created_at or ""}
     redis.store[f"auth:session:{key}"] = make_session(**extra)
@@ -371,7 +374,7 @@ def test_list_sessions(session_client: TestClient, fake_redis: FakeRedis):
         {
             "session_id": "older-id",
             "created_at": "2026-11-01T00:00:00+00:00",
-            "ip": "203.0.113.5",
+            "ip": DEVICE_IP,
             "user_agent": "Firefox",
             "current": False,
         },
@@ -379,7 +382,7 @@ def test_list_sessions(session_client: TestClient, fake_redis: FakeRedis):
         {
             "session_id": None,
             "created_at": None,
-            "ip": "203.0.113.5",
+            "ip": DEVICE_IP,
             "user_agent": "Firefox",
             "current": False,
         },
