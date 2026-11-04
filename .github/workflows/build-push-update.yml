@@ -7,26 +7,44 @@ on:
       - main
     paths:
       - 'app/**'
+      - 'tests/**'
       - '.github/workflows/build-push-update.yml'
+      - '.github/workflows/ci.yml'
       - 'pyproject.toml'
       - 'uv.lock'
       - 'Dockerfile'
       - '.pre-commit-config.yaml'
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: read
 
 jobs:
-  build_and_update:
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: check
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write # 允許推送到 GHCR
+    # 新的 push 會取消還在 build 的舊版本
+    concurrency:
+      group: ${{ github.workflow }}-build-${{ github.ref }}
+      cancel-in-progress: true
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      subject: ${{ steps.meta.outputs.subject }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Get Image Tag and Commit Message
+        id: meta
+        run: |
+          echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "subject=$(git log -1 --format=%s)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -36,48 +54,34 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Get Image Tag and Commit Message
-        id: meta
-        run: |
-          echo "TAG=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-          COMMIT_SUBJECT=$(git log -1 --format="%s")
-          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
-          echo "COMMIT_SUBJECT<<$EOF" >> $GITHUB_ENV
-          echo "$COMMIT_SUBJECT" >> $GITHUB_ENV
-          echo "$EOF" >> $GITHUB_ENV
-        env:
-          GITHUB_SHA: ${{ github.sha }}
-
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Install Dependencies and Run Tests
-        run: |
-          uv sync
-          uv run pre-commit run --all-files
-        env:
-          DATABASE_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
-          REDIS_URL: "redis://localhost:6379/0"
-
       - name: Build and Push Docker Image to GHCR
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/backend:${{ steps.meta.outputs.TAG }}
+            ghcr.io/${{ github.repository_owner }}/backend:${{ steps.meta.outputs.tag }}
             ghcr.io/${{ github.repository_owner }}/backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # 不取消執行中的部署, 等待中的只保留最新的一個
+    concurrency:
+      group: ${{ github.workflow }}-deploy-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
       - name: Checkout GitOps Manifests Repository
         uses: actions/checkout@v4
         with:
@@ -89,24 +93,44 @@ jobs:
       - name: Update Deployment Image Tag
         run: |
           OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          sed -i "s|image: ghcr.io/${OWNER_LC}/backend:.*|image: ghcr.io/${OWNER_LC}/backend:${{ steps.meta.outputs.TAG }}|g" gitops/backend/deployment.yaml
-          sed -i "s|image: ghcr.io/${OWNER_LC}/backend:.*|image: ghcr.io/${OWNER_LC}/backend:${{ steps.meta.outputs.TAG }}|g" gitops/backend/docker-compose.yml
+          IMAGE="ghcr.io/${OWNER_LC}/backend:${TAG}"
+          sed -i "s|image: ghcr.io/${OWNER_LC}/backend:.*|image: ${IMAGE}|g" gitops/backend/deployment.yaml
+          sed -i "s|image: ghcr.io/${OWNER_LC}/backend:.*|image: ${IMAGE}|g" gitops/backend/docker-compose.yml
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
 
       - name: Import GPG Key
         uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           # passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          workdir: gitops
           git_user_signingkey: true
           git_commit_gpgsign: true
           git_committer_name: "TaiwanFRP Deploy Bot"
           git_committer_email: "deploy@taiwanfrp.me"
 
       - name: Commit and Push Changes
+        working-directory: gitops
         run: |
-          cd gitops
           git config user.name "TaiwanFRP Deploy Bot"
           git config user.email "deploy@taiwanfrp.me"
-          git status
-          git commit -a -S -m "deploy(backend): $COMMIT_SUBJECT" -m "Update image tag to ${{ steps.meta.outputs.TAG }}"
-          git push origin main
+
+          # 重跑同一個 commit 時 tag 沒有變
+          if git diff --quiet; then
+            echo "Image tag is already ${TAG}, nothing to commit"
+            exit 0
+          fi
+
+          git commit -a -S -m "deploy(backend): ${COMMIT_SUBJECT}" -m "Update image tag to ${TAG}"
+
+          # 其他 repo 可能同時推送到 gitops
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin main && exit 0
+            echo "Push failed (attempt ${attempt}), retrying"
+            sleep 5
+          done
+          exit 1
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          COMMIT_SUBJECT: ${{ needs.build.outputs.subject }}
