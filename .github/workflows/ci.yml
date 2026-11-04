@@ -6,7 +6,6 @@ on:
       - main
   workflow_call:
 
-# 被呼叫時 github.workflow 是呼叫者的名稱, 要跟呼叫者的 group 分開
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true

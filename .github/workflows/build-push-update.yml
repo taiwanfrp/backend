@@ -22,7 +22,6 @@ jobs:
   check:
     uses: ./.github/workflows/ci.yml
 
-  # 在各自架構的 runner 上原生 build, 推送 <tag>-amd64 與 <tag>-arm64
   build:
     name: Build (${{ matrix.arch }})
     needs: check
@@ -37,7 +36,6 @@ jobs:
     permissions:
       contents: read
       packages: write # 允許推送到 GHCR
-    # 新的 push 會取消還在 build 的舊版本 (group 要分架構, 否則 amd64 與 arm64 會互相取消)
     concurrency:
       group: ${{ github.workflow }}-build-${{ matrix.arch }}-${{ github.ref }}
       cancel-in-progress: true
@@ -66,7 +64,6 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,scope=${{ matrix.arch }},mode=max
 
-  # 兩種架構合併成同一個 tag, 拉的時候自動選對應的架構
   manifest:
     name: Push multi-arch tags
     needs: build
@@ -113,7 +110,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # 不取消執行中的部署, 等待中的只保留最新的一個
     concurrency:
       group: ${{ github.workflow }}-deploy-${{ github.ref }}
       cancel-in-progress: false
@@ -153,7 +149,6 @@ jobs:
           git config user.name "TaiwanFRP Deploy Bot"
           git config user.email "deploy@taiwanfrp.me"
 
-          # 重跑同一個 commit 時 tag 沒有變
           if git diff --quiet; then
             echo "Image tag is already ${TAG}, nothing to commit"
             exit 0
@@ -161,7 +156,6 @@ jobs:
 
           git commit -a -S -m "deploy(backend): ${COMMIT_SUBJECT}" -m "Update image tag to ${TAG}"
 
-          # 其他 repo 可能同時推送到 gitops
           for attempt in 1 2 3; do
             git pull --rebase origin main && git push origin main && exit 0
             echo "Push failed (attempt ${attempt}), retrying"
