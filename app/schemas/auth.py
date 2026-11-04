@@ -76,20 +76,51 @@ TICKET_CODE_DOC = {
 }
 
 
-# 登出所有裝置
-DELETE_SESSIONS_DOC = {
-    401: {
+# 登入中的裝置
+class SessionResponse(BaseModel):
+    session_id: str | None = Field(
+        ..., description="用來登出這個裝置, 這個功能上線前登入的 session 為 null"
+    )
+    created_at: str | None = Field(..., description="登入時間 (ISO 8601, UTC)")
+    ip: str | None = Field(..., description="登入時的 IP")
+    user_agent: str | None = Field(..., description="登入時的 User-Agent")
+    current: bool = Field(..., description="是否為目前的裝置")
+
+
+_NOT_AUTHENTICATED = {
+    "model": ErrorResponse,
+    "description": "Not authenticated",
+    "content": {
+        "application/json": {
+            "examples": {
+                "not_authenticated": {
+                    "summary": "Cookie missing, session expired or account cannot be used",
+                    "value": {"detail": "Not authenticated"},
+                },
+            }
+        }
+    },
+}
+
+GET_SESSIONS_DOC = {401: _NOT_AUTHENTICATED}
+
+DELETE_SESSION_DOC = {
+    401: _NOT_AUTHENTICATED,
+    404: {
         "model": ErrorResponse,
-        "description": "Not authenticated",
+        "description": "Session not found",
         "content": {
             "application/json": {
                 "examples": {
-                    "not_authenticated": {
-                        "summary": "Cookie missing, session expired or account cannot be used",
-                        "value": {"detail": "Not authenticated"},
+                    "session_not_found": {
+                        "summary": "Session does not exist, expired or belongs to another user",
+                        "value": {"detail": "Session not found"},
                     },
                 }
             }
         },
     },
 }
+
+# 登出所有裝置
+DELETE_SESSIONS_DOC = {401: _NOT_AUTHENTICATED}

@@ -1,5 +1,6 @@
 import json
 import secrets
+from datetime import UTC, datetime
 
 import httpx2
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -16,9 +17,12 @@ from app.limiter import limiter
 from app.models import Role, User
 from app.redis_client import get_redis
 from app.schemas.auth import (
+    DELETE_SESSION_DOC,
     DELETE_SESSIONS_DOC,
     DISCORD_CALLBACK_DOC,
+    GET_SESSIONS_DOC,
     TICKET_CODE_DOC,
+    SessionResponse,
     TicketCodeResponse,
 )
 from app.utils.tokens import hash_session_token
@@ -33,6 +37,9 @@ DISCORD_USER_URL = "https://discord.com/api/users/@me"
 
 # 客服單 bot 的授權碼有效時間 (秒), 與 bot 的約定, 修改前要先通知對方
 TICKET_CODE_MAX_AGE = 30
+
+# session 裡保存的 User-Agent 最大長度
+USER_AGENT_MAX_LENGTH = 512
 
 # 停權中的帳號也可以開客服單 (例如申請啟用帳號)
 get_ticket_user = GetOptionalCurrentUser(allow_suspended=True)
@@ -248,6 +255,12 @@ async def discord_callback(
             "max_tunnels": tunnels_limit,
             "max_bandwidth": bandwidth_limit,
         },
+        # 裝置資訊, 給 GET /sessions 列出登入中的裝置
+        # session_id 是公開的 id, 不能用 session token 的雜湊 (它就是 Redis 的 key)
+        "session_id": secrets.token_urlsafe(16),
+        "created_at": datetime.now(UTC).isoformat(),
+        "ip": request.client.host if request.client else None,
+        "user_agent": request.headers.get("user-agent", "")[:USER_AGENT_MAX_LENGTH],
     }
     await redis.set(
         f"auth:session:{session_key}",
@@ -285,6 +298,121 @@ async def logout(
     )  # 刪除 session
 
 
+async def get_user_sessions(redis: Redis, internal_user_id: str) -> dict[str, dict]:
+    """
+    讀取使用者所有登入中的 session, 回傳 {session key: session 資料}
+    - 已經過期的 session 會被略過
+    """
+    session_keys = sorted(
+        raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
+        for raw in await redis.smembers(f"auth:user_sessions:{internal_user_id}")
+    )
+    if not session_keys:
+        return {}
+
+    values = await redis.mget([f"auth:session:{key}" for key in session_keys])
+    sessions = {}
+    for key, value in zip(session_keys, values, strict=True):
+        if not value:
+            continue
+        try:
+            sessions[key] = json.loads(value)
+        except json.JSONDecodeError:
+            continue
+    return sessions
+
+
+def require_session(
+    request: Request, current_user: CurrentUser | None
+) -> tuple[CurrentUser, str]:
+    """
+    只接受 session cookie, 回傳目前的使用者與 session key
+    """
+    session_token = request.cookies.get(settings.cookie_auth_name)
+    if not current_user or not session_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+    return current_user, hash_session_token(session_token)
+
+
+@router.get(
+    "/sessions",
+    response_model=list[SessionResponse],
+    responses=GET_SESSIONS_DOC,  # type: ignore[arg-type]
+)
+@limiter.limit("180/minute")  # type: ignore[arg-type]
+@limiter.limit("7200/hour")  # type: ignore[arg-type]
+async def list_sessions(
+    request: Request,
+    response: Response,
+    current_user: CurrentUser | None = Depends(get_session_user),
+    redis: Redis = Depends(get_redis),
+):
+    """
+    列出自己所有登入中的裝置, 最新登入的排在前面
+    - 只接受 session cookie, 不接受 API Key
+    - 這個功能上線前登入的 session 沒有裝置資訊, session_id 等欄位為 null, 只能用 DELETE /sessions 登出
+    """
+    user, current_key = require_session(request, current_user)
+    sessions = await get_user_sessions(redis, user.internal_user_id)
+
+    result = [
+        SessionResponse(
+            session_id=data.get("session_id"),
+            created_at=data.get("created_at"),
+            ip=data.get("ip"),
+            user_agent=data.get("user_agent"),
+            current=key == current_key,
+        )
+        for key, data in sessions.items()
+    ]
+    # 沒有建立時間的舊 session 排在最後
+    result.sort(key=lambda session: session.created_at or "", reverse=True)
+    return result
+
+
+@router.delete(
+    "/sessions/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=DELETE_SESSION_DOC,  # type: ignore[arg-type]
+)
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
+async def delete_session(
+    session_id: str,
+    request: Request,
+    response: Response,
+    current_user: CurrentUser | None = Depends(get_session_user),
+    redis: Redis = Depends(get_redis),
+):
+    """
+    登出指定的裝置
+    - 只接受 session cookie, 不接受 API Key
+    - 登出的是目前的裝置時, 同時清除 session cookie
+    """
+    user, current_key = require_session(request, current_user)
+    sessions = await get_user_sessions(redis, user.internal_user_id)
+
+    target = next(
+        (key for key, data in sessions.items() if data.get("session_id") == session_id),
+        None,
+    )
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
+
+    await redis.delete(f"auth:session:{target}")
+    await redis.srem(f"auth:user_sessions:{user.internal_user_id}", target)
+
+    if target == current_key:
+        response.delete_cookie(
+            key=settings.cookie_auth_name,
+            path=settings.cookie_path,
+        )
+
+
 @router.delete(
     "/sessions",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -303,19 +431,15 @@ async def delete_sessions(
     - 只接受 session cookie, 不接受 API Key
     - 客服單 bot 的 session 會在下一次請求時跟著失效
     """
-    session_token = request.cookies.get(settings.cookie_auth_name)
-    if not current_user or not session_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
-        )
+    user, current_key = require_session(request, current_user)
 
-    index_key = f"auth:user_sessions:{current_user.internal_user_id}"
+    index_key = f"auth:user_sessions:{user.internal_user_id}"
     session_keys = {
         raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
         for raw in await redis.smembers(index_key)
     }
     # 索引過期時也要刪掉目前的 session
-    session_keys.add(hash_session_token(session_token))
+    session_keys.add(current_key)
 
     await redis.delete(*(f"auth:session:{key}" for key in session_keys), index_key)
 

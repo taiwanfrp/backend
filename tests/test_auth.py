@@ -7,7 +7,9 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.database import get_db
 from app.main import app
+from app.models import AccountStatus, User
 from app.redis_client import get_redis
+from app.routers import auth as auth_router
 from app.utils.tokens import hash_session_token
 
 
@@ -104,10 +106,18 @@ class FakeRedis:
     async def smembers(self, key: str):
         return {member.encode("utf-8") for member in self.sets.get(key, set())}
 
+    async def srem(self, key: str, *members: str):
+        self.sets.get(key, set()).difference_update(members)
+        return len(members)
 
-def make_session(status: str = "active") -> str:
+    async def mget(self, keys: list[str]):
+        return [self.store.get(key) for key in keys]
+
+
+def make_session(status: str = "active", **extra: str) -> str:
     return json.dumps(
         {
+            **extra,
             "internal_user_id": "user-id",
             "internal_account_status": status,
             "discord_id": "100000000000000001",
@@ -318,3 +328,189 @@ def test_delete_sessions_rejects_api_key(session_client: TestClient):
     )
 
     assert response.status_code == 401
+
+
+def add_device(
+    redis: FakeRedis, token: str, session_id: str | None, created_at: str | None
+) -> str:
+    key = hash_session_token(token)
+    extra = {"ip": "1.1.1.1", "user_agent": "Firefox"}
+    if session_id:
+        extra |= {"session_id": session_id, "created_at": created_at or ""}
+    redis.store[f"auth:session:{key}"] = make_session(**extra)
+    redis.sets.setdefault("auth:user_sessions:user-id", set()).add(key)
+    return key
+
+
+def test_list_sessions(session_client: TestClient, fake_redis: FakeRedis):
+    login(session_client, fake_redis)
+    current = hash_session_token(SESSION_TOKEN)
+    fake_redis.store[f"auth:session:{current}"] = make_session(
+        session_id="current-id",
+        created_at="2026-11-04T08:00:00+00:00",
+        ip="198.51.100.1",
+        user_agent="Chrome",
+    )
+    fake_redis.sets["auth:user_sessions:user-id"] = {current}
+    add_device(fake_redis, "older", "older-id", "2026-11-01T00:00:00+00:00")
+    add_device(fake_redis, "legacy", None, None)
+    # 已經過期, 只剩索引裡的 key
+    fake_redis.sets["auth:user_sessions:user-id"].add("expired")
+
+    response = session_client.get("/api/v1/auth/sessions")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "session_id": "current-id",
+            "created_at": "2026-11-04T08:00:00+00:00",
+            "ip": "198.51.100.1",
+            "user_agent": "Chrome",
+            "current": True,
+        },
+        {
+            "session_id": "older-id",
+            "created_at": "2026-11-01T00:00:00+00:00",
+            "ip": "203.0.113.5",
+            "user_agent": "Firefox",
+            "current": False,
+        },
+        # 這個功能上線前登入的 session 排在最後
+        {
+            "session_id": None,
+            "created_at": None,
+            "ip": "203.0.113.5",
+            "user_agent": "Firefox",
+            "current": False,
+        },
+    ]
+
+
+def test_list_sessions_requires_session(session_client: TestClient):
+    response = session_client.get(
+        "/api/v1/auth/sessions", headers={"Authorization": "Bearer twf_test_key"}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
+
+
+def test_delete_session_logs_out_other_device(
+    session_client: TestClient, fake_redis: FakeRedis
+):
+    login(session_client, fake_redis)
+    current = hash_session_token(SESSION_TOKEN)
+    fake_redis.sets["auth:user_sessions:user-id"] = {current}
+    other = add_device(fake_redis, "other", "other-id", "2026-11-01T00:00:00+00:00")
+
+    response = session_client.delete("/api/v1/auth/sessions/other-id")
+
+    assert response.status_code == 204
+    assert f"auth:session:{other}" not in fake_redis.store
+    assert fake_redis.sets["auth:user_sessions:user-id"] == {current}
+    # 目前的裝置不受影響, 也不會清除 cookie
+    assert "set-cookie" not in response.headers
+    assert session_client.get("/api/v1/users/me").status_code == 200
+
+
+def test_delete_session_current_device_clears_cookie(
+    session_client: TestClient, fake_redis: FakeRedis
+):
+    login(session_client, fake_redis)
+    current = hash_session_token(SESSION_TOKEN)
+    fake_redis.store[f"auth:session:{current}"] = make_session(session_id="current-id")
+    fake_redis.sets["auth:user_sessions:user-id"] = {current}
+
+    response = session_client.delete("/api/v1/auth/sessions/current-id")
+
+    assert response.status_code == 204
+    assert f"auth:session:{current}" not in fake_redis.store
+    assert response.headers["set-cookie"].startswith(f'{settings.cookie_auth_name}=""')
+
+
+def test_delete_session_not_found(session_client: TestClient, fake_redis: FakeRedis):
+    login(session_client, fake_redis)
+    # 其他使用者的 session 也當作不存在
+    fake_redis.store["auth:session:someone-else"] = make_session(session_id="their-id")
+    fake_redis.sets["auth:user_sessions:another-user"] = {"someone-else"}
+
+    for session_id in ("missing-id", "their-id"):
+        response = session_client.delete(f"/api/v1/auth/sessions/{session_id}")
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Session not found"}
+    assert "auth:session:someone-else" in fake_redis.store
+
+
+class FakeDiscordResponse:
+    def __init__(self, data: dict):
+        self.status_code = 200
+        self.data = data
+
+    def json(self):
+        return self.data
+
+
+class FakeDiscordClient:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    async def post(self, *args, **kwargs):
+        return FakeDiscordResponse({"access_token": "discord-access-token"})
+
+    async def get(self, *args, **kwargs):
+        return FakeDiscordResponse({"id": "100000000000000001", "username": "user"})
+
+
+class FakeUserResult:
+    def __init__(self, user: User):
+        self.user = user
+
+    def scalar_one_or_none(self):
+        return self.user
+
+
+class FakeUserDB:
+    def __init__(self, user: User):
+        self.user = user
+
+    async def execute(self, stmt):
+        return FakeUserResult(self.user)
+
+
+def test_discord_callback_stores_device_info(
+    session_client: TestClient, fake_redis: FakeRedis, monkeypatch: pytest.MonkeyPatch
+):
+    user = User(
+        id="user-id",
+        discord_id="100000000000000001",
+        status=AccountStatus.ACTIVE,
+        custom_max_tunnels=None,
+        custom_max_bandwidth=None,
+    )
+    user.roles = []
+
+    async def override_user_db():
+        yield FakeUserDB(user)
+
+    app.dependency_overrides[get_db] = override_user_db
+    monkeypatch.setattr(auth_router.httpx2, "AsyncClient", FakeDiscordClient)
+    session_client.cookies.set(settings.cookie_auth_login_state_name, "state")
+
+    response = session_client.get(
+        "/api/v1/auth/discord/callback?code=code&state=state",
+        headers={"User-Agent": "A" * 600},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    (key,) = fake_redis.sets["auth:user_sessions:user-id"]
+    data = json.loads(fake_redis.store[f"auth:session:{key}"])
+    # 正式環境由 uvicorn 的 --proxy-headers 從 X-Forwarded-For 取得, TestClient 固定是 testclient
+    assert data["ip"] == "testclient"
+    assert data["user_agent"] == "A" * 512
+    assert len(data["session_id"]) >= 16
+    assert data["session_id"] != key
+    assert data["created_at"].endswith("+00:00")
