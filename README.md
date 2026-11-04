@@ -59,6 +59,7 @@ fastapi run
 | `GET` | `/api/v1/auth/discord/login` | 回傳 Discord OAuth2 授權網址並 302 重新導向 | None | 60/hour, 180/day |
 | `GET` | `/api/v1/auth/discord/callback` | 從 Discord 回來的 code 去跟 Discord 換取資料，確認身分後 setCookie | None | 60/hour, 180/day |
 | `POST` | `/api/v1/auth/logout` | 登出並清除 session cookie | None | 60/hour, 180/day |
+| `DELETE` | `/api/v1/auth/sessions` | 登出所有裝置 (包含目前的裝置, 只接受 session cookie) | None | 60/hour, 180/day |
 | `POST` | `/api/v1/auth/ticket-code` | 產生客服單 bot 的一次性授權碼 (30 秒, 只接受前端的 Origin) | None | 60/minute, 600/hour |
 | `GET`  | `/api/v1/users/me` | 回傳使用者資訊 (尚未啟用的帳號也可以) | None | 180/minute, 7200/hour |
 | `POST` | `/api/v1/users/me/become-node-provider` | 申請成為節點提供者 | `user.update.own` | 10/hour, 30/day |

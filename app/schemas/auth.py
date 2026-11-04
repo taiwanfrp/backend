@@ -74,3 +74,22 @@ TICKET_CODE_DOC = {
         },
     },
 }
+
+
+# 登出所有裝置
+DELETE_SESSIONS_DOC = {
+    401: {
+        "model": ErrorResponse,
+        "description": "Not authenticated",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "not_authenticated": {
+                        "summary": "Cookie missing, session expired or account cannot be used",
+                        "value": {"detail": "Not authenticated"},
+                    },
+                }
+            }
+        },
+    },
+}

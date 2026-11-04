@@ -16,6 +16,7 @@ from app.limiter import limiter
 from app.models import Role, User
 from app.redis_client import get_redis
 from app.schemas.auth import (
+    DELETE_SESSIONS_DOC,
     DISCORD_CALLBACK_DOC,
     TICKET_CODE_DOC,
     TicketCodeResponse,
@@ -35,6 +36,9 @@ TICKET_CODE_MAX_AGE = 30
 
 # 停權中的帳號也可以開客服單 (例如申請啟用帳號)
 get_ticket_user = GetOptionalCurrentUser(allow_suspended=True)
+
+# 只讀 session cookie (不接受 API Key), 停權中的帳號也可以登出所有裝置
+get_session_user = GetOptionalCurrentUser(allow_suspended=True)
 
 
 @router.get("/discord/login", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
@@ -279,6 +283,46 @@ async def logout(
         key=settings.cookie_auth_name,
         path=settings.cookie_path,
     )  # 刪除 session
+
+
+@router.delete(
+    "/sessions",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=DELETE_SESSIONS_DOC,  # type: ignore[arg-type]
+)
+@limiter.limit("60/hour")  # type: ignore[arg-type]
+@limiter.limit("180/day")  # type: ignore[arg-type]
+async def delete_sessions(
+    request: Request,
+    response: Response,
+    current_user: CurrentUser | None = Depends(get_session_user),
+    redis: Redis = Depends(get_redis),
+):
+    """
+    登出所有裝置 (包含目前的裝置), 刪除使用者所有的 session 並清除 session cookie
+    - 只接受 session cookie, 不接受 API Key
+    - 客服單 bot 的 session 會在下一次請求時跟著失效
+    """
+    session_token = request.cookies.get(settings.cookie_auth_name)
+    if not current_user or not session_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+
+    index_key = f"auth:user_sessions:{current_user.internal_user_id}"
+    session_keys = {
+        raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
+        for raw in await redis.smembers(index_key)
+    }
+    # 索引過期時也要刪掉目前的 session
+    session_keys.add(hash_session_token(session_token))
+
+    await redis.delete(*(f"auth:session:{key}" for key in session_keys), index_key)
+
+    response.delete_cookie(
+        key=settings.cookie_auth_name,
+        path=settings.cookie_path,
+    )
 
 
 @router.post(

@@ -74,13 +74,14 @@ class FakeRedis:
     def __init__(self):
         self.store: dict[str, str] = {}
         self.ttls: dict[str, int] = {}
+        self.sets: dict[str, set[str]] = {}
 
     async def get(self, key: str):
         return self.store.get(key)
 
     async def expire(self, key: str, ttl: int):
         self.ttls[key] = ttl
-        return key in self.store
+        return key in self.store or key in self.sets
 
     async def set(self, key: str, value: str, ex: int | None = None):
         self.store[key] = value
@@ -88,8 +89,20 @@ class FakeRedis:
             self.ttls[key] = ex
         return True
 
-    async def delete(self, key: str):
-        return 1 if self.store.pop(key, None) is not None else 0
+    async def delete(self, *keys: str):
+        return sum(
+            1
+            for key in keys
+            if self.store.pop(key, None) is not None
+            or self.sets.pop(key, None) is not None
+        )
+
+    async def sadd(self, key: str, *members: str):
+        self.sets.setdefault(key, set()).update(members)
+        return len(members)
+
+    async def smembers(self, key: str):
+        return {member.encode("utf-8") for member in self.sets.get(key, set())}
 
 
 def make_session(status: str = "active") -> str:
@@ -241,3 +254,67 @@ def test_create_ticket_code_rejects_other_origin(
     assert response.status_code == 403
     assert response.json() == {"detail": "Origin not allowed"}
     assert not any(key.startswith("auth:ticket_code:") for key in fake_redis.store)
+
+
+def test_delete_sessions_logs_out_every_device(
+    session_client: TestClient, fake_redis: FakeRedis
+):
+    login(session_client, fake_redis)
+    current = hash_session_token(SESSION_TOKEN)
+    other = hash_session_token("other-device-token")
+    fake_redis.store[f"auth:session:{other}"] = make_session()
+    fake_redis.sets["auth:user_sessions:user-id"] = {current, other}
+    # 其他使用者的 session 不受影響
+    fake_redis.store["auth:session:someone-else"] = make_session()
+    fake_redis.sets["auth:user_sessions:another-user"] = {"someone-else"}
+
+    response = session_client.delete("/api/v1/auth/sessions")
+
+    assert response.status_code == 204
+    assert f"auth:session:{current}" not in fake_redis.store
+    assert f"auth:session:{other}" not in fake_redis.store
+    assert "auth:user_sessions:user-id" not in fake_redis.sets
+    assert "auth:session:someone-else" in fake_redis.store
+    assert "auth:user_sessions:another-user" in fake_redis.sets
+    # 回應會清除 session cookie
+    set_cookie = response.headers["set-cookie"]
+    assert set_cookie.startswith(f'{settings.cookie_auth_name}=""')
+    assert "Max-Age=0" in set_cookie
+    # 舊的 cookie 不能再使用
+    assert session_client.get("/api/v1/users/me").status_code == 401
+
+
+def test_delete_sessions_without_index(
+    session_client: TestClient, fake_redis: FakeRedis
+):
+    # 索引已經過期時, 目前的 session 也要刪掉
+    login(session_client, fake_redis)
+    response = session_client.delete("/api/v1/auth/sessions")
+
+    assert response.status_code == 204
+    assert f"auth:session:{hash_session_token(SESSION_TOKEN)}" not in fake_redis.store
+
+
+def test_delete_sessions_allows_suspended_account(
+    session_client: TestClient, fake_redis: FakeRedis
+):
+    login(session_client, fake_redis, status="suspended")
+    response = session_client.delete("/api/v1/auth/sessions")
+
+    assert response.status_code == 204
+    assert f"auth:session:{hash_session_token(SESSION_TOKEN)}" not in fake_redis.store
+
+
+def test_delete_sessions_requires_session(session_client: TestClient):
+    response = session_client.delete("/api/v1/auth/sessions")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
+
+
+def test_delete_sessions_rejects_api_key(session_client: TestClient):
+    response = session_client.delete(
+        "/api/v1/auth/sessions", headers={"Authorization": "Bearer twf_test_key"}
+    )
+
+    assert response.status_code == 401
