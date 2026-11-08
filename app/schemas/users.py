@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 from app.models import AccountStatus
 from app.schemas.common import ErrorResponse
@@ -29,6 +29,15 @@ class UserCreateRequest(BaseModel):
 # 更新使用者
 class UserUpdateRequest(BaseModel):
     status: AccountStatus | None = Field(None, description="帳號狀態")
+    status_reason: str | None = Field(
+        None,
+        description="停權 (suspended), 封禁 (banned) 的原因, 會顯示給使用者",
+        max_length=500,
+    )
+    status_until: AwareDatetime | None = Field(
+        None,
+        description="停權, 封禁的到期時間 (要有時區), null 表示永久; 到期後自動改回 active",
+    )
     custom_max_tunnels: int | None = Field(
         None, description="自訂最大隧道數量, null 表示使用身份組的限制", ge=0
     )
@@ -50,6 +59,13 @@ class UserUpdateRequest(BaseModel):
             raise ValueError("Field cannot be null")
         return v
 
+    @field_validator("status_until")
+    @classmethod
+    def check_future(cls, v):
+        if v is not None and v <= datetime.now(UTC):
+            raise ValueError("status_until must be in the future")
+        return v
+
 
 class UserRoleResponse(BaseModel):
     id: int
@@ -62,6 +78,8 @@ class UserResponse(BaseModel):
     id: str
     discord_id: str
     status: AccountStatus
+    status_reason: str | None
+    status_until: datetime | None
     custom_max_tunnels: int | None
     custom_max_bandwidth: int | None
     roles: list[UserRoleResponse] = []
@@ -129,6 +147,12 @@ USER_UPDATE_DOC = {
                         "summary": "Cannot change own status or roles",
                         "value": {"detail": "Cannot change your own status or roles"},
                     },
+                    "status_detail_for_active": {
+                        "summary": "Reason or until set for an active account",
+                        "value": {
+                            "detail": "status_reason and status_until are only for suspended or banned accounts"
+                        },
+                    },
                     "roles_not_found": ROLES_NOT_FOUND_EXAMPLE,
                 }
             }
@@ -188,10 +212,6 @@ GET_CURRENT_USER_DOC = {
                     "account_deleted": {
                         "summary": "Account has been deleted",
                         "value": {"detail": "Account is deleted"},
-                    },
-                    "account_banned": {
-                        "summary": "Account is banned",
-                        "value": {"detail": "Account is banned"},
                     },
                 }
             }

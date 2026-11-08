@@ -25,6 +25,7 @@ from app.schemas.auth import (
     SessionResponse,
     TicketCodeResponse,
 )
+from app.utils.sessions import lift_expired_status, status_fields
 from app.utils.tokens import hash_session_token
 
 # v1 版本的驗證路由, 包含 Discord OAuth2 登入流程和相關的 Redis 驗證碼管理
@@ -41,11 +42,11 @@ TICKET_CODE_MAX_AGE = 30
 # session 裡保存的 User-Agent 最大長度
 USER_AGENT_MAX_LENGTH = 512
 
-# 停權中的帳號也可以開客服單 (例如申請啟用帳號)
-get_ticket_user = GetOptionalCurrentUser(allow_suspended=True)
+# 停權, 封禁中的帳號也可以開客服單 (例如申請啟用帳號, 申訴)
+get_ticket_user = GetOptionalCurrentUser(allow_inactive=True)
 
-# 只讀 session cookie (不接受 API Key), 停權中的帳號也可以登出所有裝置
-get_session_user = GetOptionalCurrentUser(allow_suspended=True)
+# 只讀 session cookie (不接受 API Key), 停權, 封禁中的帳號也可以管理登入的裝置
+get_session_user = GetOptionalCurrentUser(allow_inactive=True)
 
 
 @router.get("/discord/login", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
@@ -191,6 +192,7 @@ async def discord_callback(
             tunnels_limit = 0
             bandwidth_limit = 0
     else:
+        await lift_expired_status(db, redis, user)
         user_permissions = list(
             {permission.name for role in user.roles for permission in role.permissions}
         )
@@ -242,7 +244,7 @@ async def discord_callback(
     # 要把整個 user_info 存進去, 以便後續取得 email 等資料
     session_data = {
         "internal_user_id": user.id,
-        "internal_account_status": user.status.value,
+        **status_fields(user),
         "discord_id": user.discord_id,
         "username": user_info.get("username", "Unknown"),
         "avatar": user_info.get("avatar"),

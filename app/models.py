@@ -60,6 +60,12 @@ class User(Base):
     status: Mapped[AccountStatus] = mapped_column(
         Enum(AccountStatus), nullable=False, default=AccountStatus.SUSPENDED
     )
+    status_reason: Mapped[str | None] = mapped_column(
+        String(500), nullable=True, default=None
+    )  # 停權, 封禁的原因, 會顯示給使用者
+    status_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )  # 停權, 封禁的到期時間, None 表示永久
     custom_max_tunnels: Mapped[int | None] = mapped_column(
         Integer, nullable=True, default=None
     )  # 自訂最大隧道數量, None 表示使用角色的限制

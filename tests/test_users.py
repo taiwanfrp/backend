@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,6 +19,7 @@ NOW = datetime(2026, 1, 1, tzinfo=UTC)
 class FakeRedis:
     def __init__(self, sessions: dict[str, set[str]] | None = None):
         self.store: dict[str, object] = {}
+        self.expire_at: dict[str, int] = {}
         for user_id, tokens in (sessions or {}).items():
             self.store[f"auth:user_sessions:{user_id}"] = set(tokens)
             self.store[f"auth:permissions:{user_id}"] = "[]"
@@ -32,8 +33,14 @@ class FakeRedis:
     async def get(self, key: str):
         return self.store.get(key)
 
-    async def set(self, key: str, value: str, ex: int | None = None):
+    async def set(
+        self, key: str, value: str, ex: int | None = None, exat: int | None = None
+    ):
         self.store[key] = value
+        if exat is not None:
+            self.expire_at[key] = exat
+        else:
+            self.expire_at.pop(key, None)
         return True
 
     async def ttl(self, key: str):
@@ -183,6 +190,8 @@ def test_get_users(setup_client):
         "id": "target-id",
         "discord_id": TARGET_DISCORD_ID,
         "status": "suspended",
+        "status_reason": None,
+        "status_until": None,
         "custom_max_tunnels": None,
         "custom_max_bandwidth": None,
         "roles": [{"id": 1, "name": "user"}],
@@ -412,6 +421,138 @@ def test_update_user_not_found(setup_client):
     assert response.status_code == 404
 
 
+BAN_KEY = f"auth:ban:{TARGET_DISCORD_ID}"
+
+
+def ban_request(**extra) -> dict:
+    return {"status": "banned", "status_reason": "spam", **extra}
+
+
+def test_ban_user_with_until(setup_client):
+    user = make_user()
+    user.status = AccountStatus.ACTIVE
+    redis = FakeRedis(sessions={"target-id": {"token-a"}})
+    redis.store["auth:session:token-a"] = json.dumps(
+        {"internal_account_status": "active"}
+    )
+    client, db, redis = setup_client([user, None], ["user.update.all"], redis=redis)
+    until = datetime.now(UTC).replace(microsecond=0) + timedelta(days=7)
+
+    response = client.patch(
+        f"/api/v1/users/{TARGET_DISCORD_ID}",
+        json=ban_request(status_until=until.isoformat()),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "banned"
+    assert body["status_reason"] == "spam"
+    # 啟用中的節點改成維護中
+    assert "UPDATE nodes SET status" in db.statements[1]
+    session = json.loads(redis.store["auth:session:token-a"])
+    assert session["internal_account_status"] == "banned"
+    assert session["status_reason"] == "spam"
+    assert session["status_until"] == until.isoformat()
+    # 給客服單 bot 查詢, 到期時自動過期
+    assert json.loads(redis.store[BAN_KEY]) == {
+        "reason": "spam",
+        "until": until.isoformat(),
+    }
+    assert redis.expire_at[BAN_KEY] == int(until.timestamp())
+
+
+def test_ban_user_permanently(setup_client):
+    user = make_user()
+    client, _, redis = setup_client([user, None], ["user.update.all"])
+
+    response = client.patch(f"/api/v1/users/{TARGET_DISCORD_ID}", json=ban_request())
+
+    assert response.status_code == 200
+    assert response.json()["status_until"] is None
+    assert json.loads(redis.store[BAN_KEY]) == {"reason": "spam", "until": None}
+    assert BAN_KEY not in redis.expire_at
+
+
+def test_update_reason_of_banned_user(setup_client):
+    user = make_user()
+    user.status = AccountStatus.BANNED
+    user.status_reason = "spam"
+    client, db, redis = setup_client([user], ["user.update.all"])
+
+    response = client.patch(
+        f"/api/v1/users/{TARGET_DISCORD_ID}", json={"status_reason": "abuse"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status_reason"] == "abuse"
+    # 已經是封禁中, 不會再改節點
+    assert len(db.statements) == 1
+    assert json.loads(redis.store[BAN_KEY])["reason"] == "abuse"
+
+
+def test_changing_status_clears_old_reason(setup_client):
+    user = make_user()
+    user.status = AccountStatus.BANNED
+    user.status_reason = "spam"
+    client, _, redis = setup_client([user], ["user.update.all"])
+    redis.store[BAN_KEY] = "{}"
+
+    response = client.patch(
+        f"/api/v1/users/{TARGET_DISCORD_ID}", json={"status": "suspended"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status_reason"] is None
+    assert BAN_KEY not in redis.store
+
+
+def test_unban_user(setup_client):
+    user = make_user()
+    user.status = AccountStatus.BANNED
+    user.status_reason = "spam"
+    user.status_until = datetime.now(UTC) + timedelta(days=1)
+    client, _, redis = setup_client([user], ["user.update.all"])
+    redis.store[BAN_KEY] = "{}"
+
+    response = client.patch(
+        f"/api/v1/users/{TARGET_DISCORD_ID}", json={"status": "active"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status_reason"] is None
+    assert body["status_until"] is None
+    assert BAN_KEY not in redis.store
+
+
+def test_active_user_rejects_status_reason(setup_client):
+    user = make_user()
+    client, db, _ = setup_client([user], ["user.update.all"])
+
+    response = client.patch(
+        f"/api/v1/users/{TARGET_DISCORD_ID}",
+        json={"status": "active", "status_reason": "spam"},
+    )
+
+    assert response.status_code == 400
+    assert not db.committed
+
+
+@pytest.mark.parametrize(
+    "status_until", ["2000-01-01T00:00:00+00:00", "2999-01-01T00:00:00"]
+)
+def test_ban_rejects_invalid_until(setup_client, status_until: str):
+    # 過去的時間, 沒有時區
+    client, _, _ = setup_client([], ["user.update.all"])
+
+    response = client.patch(
+        f"/api/v1/users/{TARGET_DISCORD_ID}",
+        json=ban_request(status_until=status_until),
+    )
+
+    assert response.status_code == 422
+
+
 # 啟用帳號
 
 
@@ -427,6 +568,7 @@ def test_activate_user_updates_sessions(setup_client):
 
     assert response.status_code == 200
     assert user.status == AccountStatus.ACTIVE
+    assert user.status_reason is None
     assert db.committed
     # 已經登入的 session 也要更新, 不用重新登入
     session = json.loads(redis.store["auth:session:token-a"])

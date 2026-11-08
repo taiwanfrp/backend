@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncGenerator, Generator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,7 +8,7 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.database import get_db
 from app.main import app
-from app.models import AccountStatus, User
+from app.models import AccountStatus, Role, User
 from app.redis_client import get_redis
 from app.routers import auth as auth_router
 from app.utils.tokens import hash_session_token
@@ -85,11 +86,16 @@ class FakeRedis:
         self.ttls[key] = ttl
         return key in self.store or key in self.sets
 
-    async def set(self, key: str, value: str, ex: int | None = None):
+    async def set(
+        self, key: str, value: str, ex: int | None = None, exat: int | None = None
+    ):
         self.store[key] = value
         if ex is not None:
             self.ttls[key] = ex
         return True
+
+    async def ttl(self, key: str):
+        return 3600 if key in self.store else -2
 
     async def delete(self, *keys: str):
         return sum(
@@ -114,7 +120,7 @@ class FakeRedis:
         return [self.store.get(key) for key in keys]
 
 
-def make_session(status: str = "active", **extra: str) -> str:
+def make_session(status: str = "active", **extra: str | None) -> str:
     return json.dumps(
         {
             **extra,
@@ -150,12 +156,14 @@ def session_client(fake_redis: FakeRedis) -> Generator[TestClient, None, None]:
     app.dependency_overrides.clear()
 
 
-def login(client: TestClient, redis: FakeRedis, status: str = "active"):
+def login(
+    client: TestClient, redis: FakeRedis, status: str = "active", **extra: str | None
+):
     """
     模擬登入: Redis 的 key 是 session token 的雜湊
     """
     redis.store[f"auth:session:{hash_session_token(SESSION_TOKEN)}"] = make_session(
-        status
+        status, **extra
     )
     client.cookies.set(settings.cookie_auth_name, SESSION_TOKEN)
 
@@ -172,28 +180,89 @@ def test_session_is_stored_by_hash(session_client: TestClient, fake_redis: FakeR
     assert response.json()["discord_id"] == "100000000000000001"
 
 
-def test_me_allows_suspended_account(session_client: TestClient, fake_redis: FakeRedis):
-    login(session_client, fake_redis, status="suspended")
+@pytest.mark.parametrize("status", ["suspended", "banned"])
+def test_me_allows_inactive_account(
+    session_client: TestClient, fake_redis: FakeRedis, status: str
+):
+    login(
+        session_client,
+        fake_redis,
+        status=status,
+        status_reason="reason",
+        status_until="2999-01-01T00:00:00+00:00",
+    )
     response = session_client.get("/api/v1/users/me")
 
     assert response.status_code == 200
-    assert response.json()["internal_account_status"] == "suspended"
+    body = response.json()
+    assert body["internal_account_status"] == status
+    assert body["status_reason"] == "reason"
+    assert body["status_until"] == "2999-01-01T00:00:00Z"
 
     # 其他 API 仍然只接受啟用中的帳號
     response = session_client.get("/api/v1/permissions")
     assert response.status_code == 403
-    assert response.json() == {"detail": "Account is suspended"}
+    assert response.json() == {"detail": f"Account is {status}"}
 
 
-@pytest.mark.parametrize("status", ["banned", "deleted"])
-def test_me_rejects_unusable_account(
-    session_client: TestClient, fake_redis: FakeRedis, status: str
-):
-    login(session_client, fake_redis, status=status)
+def test_me_rejects_deleted_account(session_client: TestClient, fake_redis: FakeRedis):
+    login(session_client, fake_redis, status="deleted")
     response = session_client.get("/api/v1/users/me")
 
     assert response.status_code == 403
-    assert response.json() == {"detail": f"Account is {status}"}
+    assert response.json() == {"detail": "Account is deleted"}
+
+
+class FakeLiftDB:
+    def __init__(self, user: User):
+        self.user = user
+        self.committed = False
+
+    async def execute(self, stmt):
+        return FakeUserResult(self.user)
+
+    async def commit(self):
+        self.committed = True
+
+
+def test_expired_ban_is_lifted(session_client: TestClient, fake_redis: FakeRedis):
+    expired = datetime.now(UTC) - timedelta(minutes=1)
+    user = User(
+        id="user-id",
+        discord_id="100000000000000001",
+        status=AccountStatus.BANNED,
+        status_reason="spam",
+        status_until=expired,
+    )
+    user.roles = [Role(name="user", max_tunnels=3, max_bandwidth=3, permissions=[])]
+    db = FakeLiftDB(user)
+
+    async def override_lift_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_lift_db
+    login(
+        session_client,
+        fake_redis,
+        status="banned",
+        status_reason="spam",
+        status_until=expired.isoformat(),
+    )
+    fake_redis.sets["auth:user_sessions:user-id"] = {hash_session_token(SESSION_TOKEN)}
+    fake_redis.store["auth:ban:100000000000000001"] = "{}"
+
+    response = session_client.get("/api/v1/permissions")
+
+    assert response.status_code == 200
+    assert user.status == AccountStatus.ACTIVE
+    assert user.status_reason is None and user.status_until is None
+    assert db.committed
+    session = json.loads(
+        fake_redis.store[f"auth:session:{hash_session_token(SESSION_TOKEN)}"]
+    )
+    assert session["internal_account_status"] == "active"
+    assert session["status_until"] is None
+    assert "auth:ban:100000000000000001" not in fake_redis.store
 
 
 def test_logout_deletes_hashed_session(
@@ -220,10 +289,11 @@ def test_create_ticket_code(session_client: TestClient, fake_redis: FakeRedis):
     assert fake_redis.ttls[key] == 30
 
 
-def test_create_ticket_code_allows_suspended_account(
-    session_client: TestClient, fake_redis: FakeRedis
+@pytest.mark.parametrize("status", ["suspended", "banned"])
+def test_create_ticket_code_allows_inactive_account(
+    session_client: TestClient, fake_redis: FakeRedis, status: str
 ):
-    login(session_client, fake_redis, status="suspended")
+    login(session_client, fake_redis, status=status)
     response = session_client.post(
         "/api/v1/auth/ticket-code", headers={"Origin": ORIGIN}
     )
@@ -231,11 +301,10 @@ def test_create_ticket_code_allows_suspended_account(
     assert response.status_code == 200
 
 
-@pytest.mark.parametrize("status", ["banned", "deleted"])
-def test_create_ticket_code_rejects_unusable_account(
-    session_client: TestClient, fake_redis: FakeRedis, status: str
+def test_create_ticket_code_rejects_deleted_account(
+    session_client: TestClient, fake_redis: FakeRedis
 ):
-    login(session_client, fake_redis, status=status)
+    login(session_client, fake_redis, status="deleted")
     response = session_client.post(
         "/api/v1/auth/ticket-code", headers={"Origin": ORIGIN}
     )
@@ -305,10 +374,11 @@ def test_delete_sessions_without_index(
     assert f"auth:session:{hash_session_token(SESSION_TOKEN)}" not in fake_redis.store
 
 
-def test_delete_sessions_allows_suspended_account(
-    session_client: TestClient, fake_redis: FakeRedis
+@pytest.mark.parametrize("status", ["suspended", "banned"])
+def test_delete_sessions_allows_inactive_account(
+    session_client: TestClient, fake_redis: FakeRedis, status: str
 ):
-    login(session_client, fake_redis, status="suspended")
+    login(session_client, fake_redis, status=status)
     response = session_client.delete("/api/v1/auth/sessions")
 
     assert response.status_code == 204

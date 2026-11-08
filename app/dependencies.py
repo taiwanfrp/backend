@@ -16,7 +16,13 @@ from app.database import get_db
 from app.exception_handlers import AuthException
 from app.models import ApiKey, ApiKeyStatus, Role, User
 from app.redis_client import get_redis
-from app.utils.sessions import calculate_limit
+from app.utils.sessions import (
+    LOGIN_ALLOWED_STATUSES,
+    calculate_limit,
+    lift_expired_status,
+    refresh_session_status,
+    status_fields,
+)
 from app.utils.tokens import hash_session_token
 
 
@@ -32,6 +38,10 @@ class UserLimits(BaseModel):
 class CurrentUser(BaseModel):
     internal_user_id: str
     internal_account_status: str
+    status_reason: str | None = Field(default=None, description="停權, 封禁的原因")
+    status_until: datetime | None = Field(
+        default=None, description="停權, 封禁的到期時間, null 表示永久"
+    )
     discord_id: str
     username: str
     avatar: str | None
@@ -48,9 +58,13 @@ class CurrentUser(BaseModel):
     )
 
 
+def allowed_statuses(allow_inactive: bool) -> tuple[str, ...]:
+    return LOGIN_ALLOWED_STATUSES if allow_inactive else ("active",)
+
+
 class GetCurrentUser:
-    def __init__(self, allow_suspended: bool = False):
-        self.allow_suspended = allow_suspended
+    def __init__(self, allow_inactive: bool = False):
+        self.allow_inactive = allow_inactive
 
     async def __call__(
         self,
@@ -61,11 +75,9 @@ class GetCurrentUser:
         """
         從 Redis 中獲取當前用戶信息的依賴函數, 用於保護需要驗證的路由
         - Prioritizing API Key over session cookie
-        - allow_suspended 為 True 時, 尚未啟用 (suspended) 的帳號也可以通過
+        - allow_inactive 為 True 時, 停權 (suspended), 封禁 (banned) 的帳號也可以通過
         """
-        allowed_statuses = (
-            ["active", "suspended"] if self.allow_suspended else ["active"]
-        )
+        statuses = allowed_statuses(self.allow_inactive)
 
         # API Key
         auth_header = request.headers.get("Authorization")
@@ -122,10 +134,11 @@ class GetCurrentUser:
 
             # 檢查所屬使用者帳號狀態
             db_user = api_key_obj.user
-            if db_user.status not in allowed_statuses:
+            await lift_expired_status(db, redis, db_user)
+            if db_user.status.value not in statuses:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Account is {db_user.status}",
+                    detail=f"Account is {db_user.status.value}",
                 )
 
             key_permissions = {
@@ -151,7 +164,7 @@ class GetCurrentUser:
 
             return CurrentUser(
                 internal_user_id=db_user.id,
-                internal_account_status=db_user.status,
+                **status_fields(db_user),
                 discord_id=db_user.discord_id,
                 username=f"API_User_{db_user.discord_id}",  # 資料僅在使用者以 Discord OAuth 登入時才有
                 avatar=None,
@@ -181,9 +194,11 @@ class GetCurrentUser:
             )  # 刪除無效 session cookie
 
         try:
-            user_data = json.loads(user_data_json)
+            user_data = await refresh_session_status(
+                db, redis, json.loads(user_data_json)
+            )
 
-            if user_data.get("internal_account_status") not in allowed_statuses:
+            if user_data.get("internal_account_status") not in statuses:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Account is {user_data.get('internal_account_status')}",
@@ -214,15 +229,18 @@ class GetCurrentUser:
             ) from e
 
 
-get_current_user = GetCurrentUser(allow_suspended=False)
+get_current_user = GetCurrentUser(allow_inactive=False)
 
 
 class GetOptionalCurrentUser:
-    def __init__(self, allow_suspended: bool = False):
-        self.allow_suspended = allow_suspended
+    def __init__(self, allow_inactive: bool = False):
+        self.allow_inactive = allow_inactive
 
     async def __call__(
-        self, request: Request, redis: Redis = Depends(get_redis)
+        self,
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+        redis: Redis = Depends(get_redis),
     ) -> CurrentUser | None:
         """
         可選用戶驗證依賴函數
@@ -239,12 +257,12 @@ class GetOptionalCurrentUser:
             return None
 
         try:
-            user_data = json.loads(user_data_json)
-
-            allowed_statuses = (
-                ["active", "suspended"] if self.allow_suspended else ["active"]
+            user_data = await refresh_session_status(
+                db, redis, json.loads(user_data_json)
             )
-            if user_data.get("internal_account_status") not in allowed_statuses:
+
+            statuses = allowed_statuses(self.allow_inactive)
+            if user_data.get("internal_account_status") not in statuses:
                 return None
 
             internal_user_id = user_data["internal_user_id"]
@@ -270,7 +288,7 @@ class GetOptionalCurrentUser:
             return None
 
 
-get_optional_current_user = GetOptionalCurrentUser(allow_suspended=False)
+get_optional_current_user = GetOptionalCurrentUser(allow_inactive=False)
 
 
 class RequirePermissions:

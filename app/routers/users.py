@@ -2,7 +2,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -16,7 +16,7 @@ from app.dependencies import (
     get_current_user,
 )
 from app.limiter import limiter
-from app.models import AccountStatus, Role, User
+from app.models import AccountStatus, Node, NodeStatus, Role, User
 from app.redis_client import get_redis
 from app.schemas.users import (
     BECOME_NODE_PROVIDER_DOC,
@@ -29,15 +29,15 @@ from app.schemas.users import (
     UserResponse,
     UserUpdateRequest,
 )
-from app.utils.sessions import sync_user_sessions
+from app.utils.sessions import ban_key, sync_user_sessions
 
 NODE_PROVIDER_ROLE_NAME = "node_provider"
 DEFAULT_ROLE_NAME = "user"
 
 router = APIRouter(prefix="/api/v1/users", tags=["Users"])
 
-# 尚未啟用的帳號也要能取得自己的資料, 前端依照 internal_account_status 顯示
-get_me_user = GetCurrentUser(allow_suspended=True)
+# 停權, 封禁的帳號也要能取得自己的資料, 前端依照 internal_account_status 顯示
+get_me_user = GetCurrentUser(allow_inactive=True)
 
 
 def require_role_assign(current_user: CurrentUser):
@@ -85,7 +85,8 @@ async def read_current_user(
 ):
     """
     獲取當前用戶信息的路由, 需要驗證
-    - 尚未啟用 (suspended) 的帳號也可以取得, 其他 API 仍然只接受啟用中的帳號
+    - 停權 (suspended), 封禁 (banned) 的帳號也可以取得, 其他 API 仍然只接受啟用中的帳號
+    - status_reason, status_until 是停權, 封禁的原因與到期時間 (null 表示永久)
     """
     return current_user
 
@@ -161,7 +162,11 @@ async def activate_user(
     """
     啟用帳號
     """
-    stmt = select(User).where(User.discord_id == discord_id)
+    stmt = (
+        select(User)
+        .where(User.discord_id == discord_id)
+        .options(selectinload(User.roles).selectinload(Role.permissions))
+    )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
@@ -178,31 +183,10 @@ async def activate_user(
         )
 
     user.status = AccountStatus.ACTIVE
+    user.status_reason = None
+    user.status_until = None
     await db.commit()
-
-    session_tokens = await redis.smembers(f"auth:user_sessions:{user.id}")
-
-    for raw_token in session_tokens:
-        token = (
-            raw_token.decode("utf-8")
-            if isinstance(raw_token, bytes)
-            else str(raw_token)
-        )
-
-        session_json = await redis.get(f"auth:session:{token}")
-        if session_json:
-            user_data = json.loads(session_json)
-            user_data["internal_account_status"] = AccountStatus.ACTIVE.value
-
-            ttl = await redis.ttl(f"auth:session:{token}")
-            if ttl > 0:
-                await redis.set(
-                    f"auth:session:{token}",
-                    json.dumps(user_data),
-                    ex=ttl,
-                )
-        else:
-            await redis.srem(f"auth:user_sessions:{user.id}", token)
+    await sync_user_sessions(redis, user)
 
     return {
         "message": f"User {discord_id} activated successfully",
@@ -288,6 +272,8 @@ async def update_user(
     - custom_max_tunnels / custom_max_bandwidth 傳入 null 表示改回使用身份組的限制
     - role_ids 會取代使用者現有的身份組, 需要 role.assign 權限
     - 不能修改自己的狀態與身份組
+    - status_reason, status_until 只能用在 suspended, banned; 改變狀態時沒有傳入的會清空, 改成 active 時一律清空
+    - 封禁 (banned) 時, 使用者啟用中的節點改成維護中 (maintenance), 解除封禁後不會自動恢復
     - 更新後會同步到該使用者所有登入 session
     """
     stmt = (
@@ -320,8 +306,32 @@ async def update_user(
         require_role_assign(current_user)
         user.roles = await load_roles(db, update_data["role_ids"])
 
-    if "status" in update_data:
-        user.status = update_data["status"]
+    new_status = update_data.get("status", user.status)
+    if new_status == AccountStatus.ACTIVE:
+        if update_data.get("status_reason") or update_data.get("status_until"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="status_reason and status_until are only for suspended or banned accounts",
+            )
+        user.status_reason = None
+        user.status_until = None
+    elif "status" in update_data and new_status != user.status:
+        user.status_reason = update_data.get("status_reason")
+        user.status_until = update_data.get("status_until")
+    else:
+        if "status_reason" in update_data:
+            user.status_reason = update_data["status_reason"]
+        if "status_until" in update_data:
+            user.status_until = update_data["status_until"]
+
+    if new_status == AccountStatus.BANNED and user.status != AccountStatus.BANNED:
+        await db.execute(
+            update(Node)
+            .where(Node.owner_id == user.id, Node.status == NodeStatus.ACTIVE)
+            .values(status=NodeStatus.MAINTENANCE)
+        )
+    user.status = new_status
+
     if "custom_max_tunnels" in update_data:
         user.custom_max_tunnels = update_data["custom_max_tunnels"]
     if "custom_max_bandwidth" in update_data:
@@ -386,6 +396,7 @@ async def delete_user(
     await redis.delete(
         f"auth:user_sessions:{user.id}",
         f"auth:permissions:{user.id}",
+        ban_key(user.discord_id),
     )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
