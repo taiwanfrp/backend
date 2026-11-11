@@ -199,6 +199,7 @@ def test_get_users(setup_client):
         "custom_max_tunnels": None,
         "custom_max_bandwidth": None,
         "roles": [{"id": 1, "name": "user"}],
+        "limits": {"max_tunnels": 3, "max_bandwidth": 3},
         "member": None,
         "created_at": "2026-01-01T00:00:00Z",
         "updated_at": "2026-01-01T00:00:00Z",
@@ -242,6 +243,25 @@ def test_get_users_when_redis_fails(setup_client):
 
     assert response.status_code == 200
     assert response.json()[0]["member"] is None
+
+
+def test_get_users_limits(setup_client):
+    custom = make_user(user_id="custom-id", discord_id="1" * 18)
+    custom.custom_max_tunnels = 10
+    admin = make_user(user_id="admin-id", discord_id="2" * 18)
+    admin.roles = [make_role(1, "user"), make_role(2, "admin", max_tunnels=0)]
+    client, _, _ = setup_client([[make_user(), custom, admin]], ["user.read.all"])
+
+    response = client.get("/api/v1/users")
+
+    assert response.status_code == 200
+    assert [user["limits"] for user in response.json()] == [
+        {"max_tunnels": 3, "max_bandwidth": 3},
+        # 自訂值優先, 沒有自訂的依身份組
+        {"max_tunnels": 10, "max_bandwidth": 3},
+        # 任一身份組是 0 表示無限制
+        {"max_tunnels": 0, "max_bandwidth": 3},
+    ]
 
 
 def test_get_users_requires_permission(setup_client):

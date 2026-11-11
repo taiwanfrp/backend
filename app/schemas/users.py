@@ -74,6 +74,11 @@ class UserRoleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UserLimitsResponse(BaseModel):
+    max_tunnels: int = Field(..., description="實際的最大隧道數量, 0 表示無限制")
+    max_bandwidth: int = Field(..., description="實際的最大頻寬 (Mbps), 0 表示無限制")
+
+
 class DiscordMemberResponse(BaseModel):
     username: str = Field(..., description="Discord 使用者名稱")
     global_name: str | None = Field(None, description="Discord 顯示名稱")
@@ -91,6 +96,10 @@ class UserResponse(BaseModel):
     custom_max_tunnels: int | None
     custom_max_bandwidth: int | None
     roles: list[UserRoleResponse] = []
+    limits: UserLimitsResponse | None = Field(
+        None,
+        description="實際的資源上限: custom_max_* 有值時使用自訂值, 否則依身份組計算 (0 表示無限制)",
+    )
     member: DiscordMemberResponse | None = Field(
         None,
         description="Discord 伺服器成員的名稱與頭像, 由客服單 bot 每 10 分鐘同步, 不在伺服器時是 null",

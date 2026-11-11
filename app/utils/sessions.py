@@ -28,6 +28,21 @@ def calculate_limit(custom_limit: int | None, role_limits: list[int]) -> int:
     return max(role_limits)
 
 
+def user_limits(user: User) -> dict:
+    """
+    實際的資源上限, 自訂值優先, 否則依身份組計算
+    - user.roles 必須已載入
+    """
+    return {
+        "max_tunnels": calculate_limit(
+            user.custom_max_tunnels, [role.max_tunnels for role in user.roles]
+        ),
+        "max_bandwidth": calculate_limit(
+            user.custom_max_bandwidth, [role.max_bandwidth for role in user.roles]
+        ),
+    }
+
+
 def as_utc(value: datetime) -> datetime:
     # MySQL 讀回來的時間沒有時區, 存的一律是 UTC
     return value if value.tzinfo else value.replace(tzinfo=UTC)
@@ -81,14 +96,7 @@ async def sync_user_sessions(redis: Redis, user: User):
         {permission.name for role in user.roles for permission in role.permissions}
     )
     roles_list = [role.name for role in user.roles]
-    limits = {
-        "max_tunnels": calculate_limit(
-            user.custom_max_tunnels, [role.max_tunnels for role in user.roles]
-        ),
-        "max_bandwidth": calculate_limit(
-            user.custom_max_bandwidth, [role.max_bandwidth for role in user.roles]
-        ),
-    }
+    limits = user_limits(user)
 
     await redis.set(
         f"auth:permissions:{user.id}",

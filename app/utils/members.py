@@ -6,7 +6,12 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from app.models import User
-from app.schemas.users import DiscordMemberResponse, UserResponse
+from app.schemas.users import (
+    DiscordMemberResponse,
+    UserLimitsResponse,
+    UserResponse,
+)
+from app.utils.sessions import user_limits
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +50,16 @@ async def get_members(
 
 
 async def to_user_responses(redis: Redis, users: list[User]) -> list[UserResponse]:
+    """
+    加上實際的資源上限與 Discord 伺服器成員, user.roles 必須已載入
+    """
     members = await get_members(redis, [user.discord_id for user in users])
     return [
         UserResponse.model_validate(user).model_copy(
-            update={"member": members[user.discord_id]}
+            update={
+                "limits": UserLimitsResponse(**user_limits(user)),
+                "member": members[user.discord_id],
+            }
         )
         for user in users
     ]
