@@ -74,6 +74,14 @@ class UserRoleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class DiscordMemberResponse(BaseModel):
+    username: str = Field(..., description="Discord 使用者名稱")
+    global_name: str | None = Field(None, description="Discord 顯示名稱")
+    nick: str | None = Field(None, description="伺服器暱稱")
+    avatar: str | None = Field(None, description="頭像的 hash")
+    guild_avatar: str | None = Field(None, description="伺服器頭像的 hash")
+
+
 class UserResponse(BaseModel):
     id: str
     discord_id: str
@@ -83,6 +91,10 @@ class UserResponse(BaseModel):
     custom_max_tunnels: int | None
     custom_max_bandwidth: int | None
     roles: list[UserRoleResponse] = []
+    member: DiscordMemberResponse | None = Field(
+        None,
+        description="Discord 伺服器成員的名稱與頭像, 由客服單 bot 每 10 分鐘同步, 不在伺服器時是 null",
+    )
     created_at: datetime
     updated_at: datetime
 

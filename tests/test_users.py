@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from redis.exceptions import RedisError
 
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user
@@ -32,6 +33,9 @@ class FakeRedis:
 
     async def get(self, key: str):
         return self.store.get(key)
+
+    async def mget(self, keys: list[str]):
+        return [self.store.get(key) for key in keys]
 
     async def set(
         self, key: str, value: str, ex: int | None = None, exat: int | None = None
@@ -195,9 +199,49 @@ def test_get_users(setup_client):
         "custom_max_tunnels": None,
         "custom_max_bandwidth": None,
         "roles": [{"id": 1, "name": "user"}],
+        "member": None,
         "created_at": "2026-01-01T00:00:00Z",
         "updated_at": "2026-01-01T00:00:00Z",
     }
+
+
+MEMBER = {
+    "username": "target",
+    "global_name": "Target",
+    "nick": "暱稱",
+    "avatar": "abc",
+    "guild_avatar": None,
+}
+
+
+def test_get_users_with_discord_members(setup_client):
+    users = [
+        make_user(),
+        make_user(user_id="left-id", discord_id="1" * 18),
+        make_user(user_id="broken-id", discord_id="2" * 18),
+    ]
+    redis = FakeRedis()
+    redis.store[f"discord:member:{TARGET_DISCORD_ID}"] = json.dumps(MEMBER)
+    redis.store[f"discord:member:{'2' * 18}"] = "not json"
+    client, _, _ = setup_client([users], ["user.read.all"], redis)
+
+    response = client.get("/api/v1/users")
+
+    assert response.status_code == 200
+    assert [user["member"] for user in response.json()] == [MEMBER, None, None]
+
+
+def test_get_users_when_redis_fails(setup_client):
+    class BrokenRedis(FakeRedis):
+        async def mget(self, keys: list[str]):
+            raise RedisError("down")
+
+    client, _, _ = setup_client([[make_user()]], ["user.read.all"], BrokenRedis())
+
+    response = client.get("/api/v1/users")
+
+    assert response.status_code == 200
+    assert response.json()[0]["member"] is None
 
 
 def test_get_users_requires_permission(setup_client):
@@ -209,12 +253,15 @@ def test_get_users_requires_permission(setup_client):
 
 
 def test_get_user_by_discord_id(setup_client):
-    client, db, _ = setup_client([make_user()], ["user.read.all"])
+    redis = FakeRedis()
+    redis.store[f"discord:member:{TARGET_DISCORD_ID}"] = json.dumps(MEMBER)
+    client, db, _ = setup_client([make_user()], ["user.read.all"], redis)
 
     response = client.get(f"/api/v1/users/{TARGET_DISCORD_ID}")
 
     assert response.status_code == 200
     assert response.json()["id"] == "target-id"
+    assert response.json()["member"] == MEMBER
     assert "users.discord_id =" in db.statements[0]
 
 

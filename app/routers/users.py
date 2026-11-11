@@ -29,6 +29,7 @@ from app.schemas.users import (
     UserResponse,
     UserUpdateRequest,
 )
+from app.utils.members import to_user_response, to_user_responses
 from app.utils.sessions import ban_key, sync_user_sessions
 
 NODE_PROVIDER_ROLE_NAME = "node_provider"
@@ -98,17 +99,19 @@ async def get_users(
     request: Request,
     response: Response,
     current_user: CurrentUser = Depends(RequirePermissions(["user.read.all"])),
+    redis: Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db),
 ):
     """
     列出所有使用者, 需要 user.read.all 權限
+    - member 是 Discord 伺服器成員的名稱與頭像, 不在伺服器時是 null
     """
     stmt = (
         select(User).options(selectinload(User.roles)).order_by(User.created_at.asc())
     )
     result = await db.execute(stmt)
 
-    return result.scalars().all()
+    return await to_user_responses(redis, list(result.scalars().all()))
 
 
 @router.get(
@@ -125,6 +128,7 @@ async def get_user(
         ..., max_length=36, description="使用者 ID (UUID) 或 Discord ID"
     ),
     current_user: CurrentUser = Depends(RequirePermissions(["user.read.all"])),
+    redis: Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -143,7 +147,7 @@ async def get_user(
             detail="User not found",
         )
 
-    return user
+    return await to_user_response(redis, user)
 
 
 @router.post(
@@ -207,6 +211,7 @@ async def create_user(
     response: Response,
     payload: UserCreateRequest,
     current_user: CurrentUser = Depends(RequirePermissions(["user.create"])),
+    redis: Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -248,7 +253,7 @@ async def create_user(
             detail="User with Discord ID already exists",
         )
 
-    return new_user
+    return await to_user_response(redis, new_user)
 
 
 @router.patch(
@@ -292,7 +297,7 @@ async def update_user(
 
     update_data = payload.model_dump(exclude_unset=True)
     if not update_data:
-        return user
+        return await to_user_response(redis, user)
 
     if user.id == current_user.internal_user_id and (
         "status" in update_data or "role_ids" in update_data
@@ -340,7 +345,7 @@ async def update_user(
     await db.commit()
     await sync_user_sessions(redis, user)
 
-    return user
+    return await to_user_response(redis, user)
 
 
 @router.delete(
