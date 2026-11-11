@@ -11,7 +11,7 @@ class RoleCreateRequest(BaseModel):
     name: str = Field(..., description="身份組名稱", min_length=1, max_length=50)
     description: str | None = Field(None, description="身份組描述", max_length=255)
     max_tunnels: int = Field(..., description="最大允許的隧道數量", ge=0)
-    max_bandwidth: int = Field(..., description="最大允許的頻寬 (Mbps)", ge=0)
+    max_bandwidth: int = Field(..., description="最大允許的頻寬 (MB/s)", ge=0)
     permissions: list[int] = Field(
         default_factory=list,
         description="身份組擁有的權限節點 ID 列表, 傳入空陣列表示身份組不會擁有任何權限節點",
@@ -25,7 +25,7 @@ class RoleUpdateRequest(BaseModel):
     )
     description: str | None = Field(None, description="身份組描述", max_length=255)
     max_tunnels: int | None = Field(None, description="最大允許的隧道數量", ge=0)
-    max_bandwidth: int | None = Field(None, description="最大允許的頻寬 (Mbps)", ge=0)
+    max_bandwidth: int | None = Field(None, description="最大允許的頻寬 (MB/s)", ge=0)
     permissions: list[int] | None = Field(
         default=None,
         description="身份組擁有的權限節點 ID 列表, 傳入空陣列表示身份組不會擁有任何權限節點",

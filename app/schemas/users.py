@@ -18,7 +18,7 @@ class UserCreateRequest(BaseModel):
         None, description="自訂最大隧道數量, null 表示使用身份組的限制", ge=0
     )
     custom_max_bandwidth: int | None = Field(
-        None, description="自訂最大頻寬 (Mbps), null 表示使用身份組的限制", ge=0
+        None, description="自訂最大頻寬 (MB/s), null 表示使用身份組的限制", ge=0
     )
     role_ids: list[int] | None = Field(
         None,
@@ -42,7 +42,7 @@ class UserUpdateRequest(BaseModel):
         None, description="自訂最大隧道數量, null 表示使用身份組的限制", ge=0
     )
     custom_max_bandwidth: int | None = Field(
-        None, description="自訂最大頻寬 (Mbps), null 表示使用身份組的限制", ge=0
+        None, description="自訂最大頻寬 (MB/s), null 表示使用身份組的限制", ge=0
     )
     role_ids: list[int] | None = Field(
         None,
@@ -76,7 +76,7 @@ class UserRoleResponse(BaseModel):
 
 class UserLimitsResponse(BaseModel):
     max_tunnels: int = Field(..., description="實際的最大隧道數量, 0 表示無限制")
-    max_bandwidth: int = Field(..., description="實際的最大頻寬 (Mbps), 0 表示無限制")
+    max_bandwidth: int = Field(..., description="實際的最大頻寬 (MB/s), 0 表示無限制")
 
 
 class DiscordMemberResponse(BaseModel):
